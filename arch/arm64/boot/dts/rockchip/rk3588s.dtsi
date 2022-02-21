@@ -2021,7 +2021,7 @@
 		#reset-cells = <1>;
 
 		assigned-clocks =
-			<&cru PLL_PPLL>, <&cru PLL_AUPLL>,
+			<&cru PLL_PPLL>,
 			<&cru PLL_NPLL>, <&cru PLL_GPLL>,
 			<&cru ACLK_CENTER_ROOT>,
 			<&cru HCLK_CENTER_ROOT>, <&cru ACLK_CENTER_LOW_ROOT>,
@@ -2031,7 +2031,7 @@
 			<&cru ACLK_BUS_ROOT>, <&cru CLK_150M_SRC>,
 			<&cru CLK_GPU>;
 		assigned-clock-rates =
-			<100000000>, <786432000>,
+			<100000000>,
 			<850000000>, <1188000000>,
 			<702000000>,
 			<400000000>, <500000000>,
