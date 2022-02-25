@@ -231,6 +231,7 @@ struct vop2_power_domain {
 	 * If the module powered by this power domain was enabled.
 	 */
 	bool module_on;
+
 	const struct vop2_power_domain_data *data;
 	struct list_head list;
 	struct delayed_work power_off_work;
@@ -1441,7 +1442,8 @@ static void vop2_wait_power_domain_off(struct vop2_power_domain *pd)
 	ret = readx_poll_timeout_atomic(vop2_power_domain_status, pd, val, !val, 0, 50 * 1000);
 
 	if (ret)
-		DRM_DEV_ERROR(vop2->dev, "wait pd%d off timeout\n", ffs(pd->data->id) - 1);
+		DRM_DEV_ERROR(vop2->dev, "wait pd%d off timeout power_ctrl: 0x%x\n",
+			      ffs(pd->data->id) - 1, vop2_readl(vop2, 0x34));
 }
 
 static void vop2_wait_power_domain_on(struct vop2_power_domain *pd)
@@ -1452,7 +1454,8 @@ static void vop2_wait_power_domain_on(struct vop2_power_domain *pd)
 
 	ret = readx_poll_timeout_atomic(vop2_power_domain_status, pd, val, val, 0, 50 * 1000);
 	if (ret)
-		DRM_DEV_ERROR(vop2->dev, "wait pd%d on timeout\n", ffs(pd->data->id) - 1);
+		DRM_DEV_ERROR(vop2->dev, "wait pd%d on timeout power_ctrl: 0x%x\n",
+			      ffs(pd->data->id) - 1, vop2_readl(vop2, 0x34));
 }
 
 /*
@@ -1504,16 +1507,15 @@ static void vop2_power_domain_put(struct vop2_power_domain *pd)
 
 	/*
 	 * For a nested power domain(PD_Cluster0 is the parent of PD_CLuster1/2/3)
-	 * the parent powe domain must be enabled before child power domain
+	 * the parent power domain must be enabled before child power domain
 	 * is on.
 	 *
-	 * So we may met this condition: Cluster0 is not enabled, but PD_Cluster0
-	 * must enabled as one of the child PD_CLUSTER1/2/3 is enabled.
+	 * So we may met this condition: Cluster0 is not on a activaed VP,
+	 * but PD_Cluster0 must enabled as one of the child PD_CLUSTER1/2/3 is enabled.
 	 * when all child PD is disabled, we want disable the parent
-	 * PD(PD_CLUSTER0), but as module CLUSTER0 is not enabled,
-	 * the turn down configuration will never take effect.
-	 * so we will see a "wait pd0 off timeout" log when we
-	 * turn on PD_CLUSTER0 next time.
+	 * PD(PD_CLUSTER0), but as module CLUSTER0 is not attcthed on a actived VP,
+	 * the turn down operation(which is take effect by vsync) will never take effect.
+	 * so we will see a "wait pd0 off timeout" log when we turn on PD_CLUSTER0 next time.
 	 *
 	 * So don't try to turn off a power domain when the module is not
 	 * enabled.
@@ -3272,7 +3274,6 @@ static void vop2_initial(struct drm_crtc *crtc)
 		else
 			memcpy(vop2->regsbak, vop2->regs, vop2->len);
 
-		VOP_CTRL_SET(vop2, pd_off_imd, 0);
 		VOP_MODULE_SET(vop2, wb, axi_yrgb_id, 0xd);
 		VOP_MODULE_SET(vop2, wb, axi_uv_id, 0xe);
 		vop2_wb_cfg_done(vp);
@@ -3310,14 +3311,56 @@ static void vop2_initial(struct drm_crtc *crtc)
 			      vp->id, ret);
 }
 
+static void vop2_power_domain_off_by_disabled_vp(struct vop2_power_domain *pd)
+{
+	struct vop2_video_port *vp = NULL;
+	struct vop2 *vop2 = pd->vop2;
+	struct vop2_win *win;
+	struct drm_crtc *crtc;
+	uint32_t vp_id;
+	uint8_t phys_id;
+	int ret;
+
+	if (pd->data->id == VOP2_PD_CLUSTER0 || pd->data->id == VOP2_PD_CLUSTER1 ||
+	    pd->data->id == VOP2_PD_CLUSTER2 || pd->data->id == VOP2_PD_CLUSTER3) {
+		phys_id = ffs(pd->data->module_id_mask) - 1;
+		win = vop2_find_win_by_phys_id(vop2, phys_id);
+		vp_id = ffs(win->vp_mask) - 1;
+		vp = &vop2->vps[vp_id];
+	} else {
+		 DRM_DEV_ERROR(vop2->dev, "unexpected power on pd%d\n", ffs(pd->data->id) - 1);
+	}
+
+	if (vp) {
+		ret = clk_prepare_enable(vp->dclk);
+		if (ret < 0)
+			DRM_DEV_ERROR(vop2->dev, "failed to enable dclk for video port%d - %d\n",
+				      vp->id, ret);
+		crtc = &vp->rockchip_crtc.crtc;
+		VOP_MODULE_SET(vop2, vp, standby, 0);
+		vop2_power_domain_off(pd);
+		vop2_cfg_done(crtc);
+		vop2_wait_power_domain_off(pd);
+
+		reinit_completion(&vp->dsp_hold_completion);
+		vop2_dsp_hold_valid_irq_enable(crtc);
+		VOP_MODULE_SET(vop2, vp, standby, 1);
+		ret = wait_for_completion_timeout(&vp->dsp_hold_completion, msecs_to_jiffies(50));
+		if (!ret)
+			DRM_DEV_INFO(vop2->dev, "wait for vp%d dsp_hold timeout\n", vp->id);
+
+		vop2_dsp_hold_valid_irq_disable(crtc);
+		clk_disable_unprepare(vp->dclk);
+	}
+}
+
 static void vop2_power_off_all_pd(struct vop2 *vop2)
 {
 	struct vop2_power_domain *pd, *n;
 
-	VOP_CTRL_SET(vop2, pd_off_imd, 1);
 	list_for_each_entry_safe_reverse(pd, n, &vop2->pd_list_head, list) {
-		VOP_MODULE_SET(vop2, pd->data, pd, 1);
-		vop2_wait_power_domain_off(pd);
+		if (vop2_power_domain_status(pd))
+			vop2_power_domain_off_by_disabled_vp(pd);
 		pd->on = false;
 		pd->module_on = false;
 	}
@@ -3333,7 +3376,6 @@ static void vop2_disable(struct drm_crtc *crtc)
 	if (--vop2->enable_count > 0)
 		return;
 
-	vop2->is_enabled = false;
 	if (vop2->is_iommu_enabled) {
 		/*
 		 * vop2 standby complete, so iommu detach is safe.
@@ -3345,6 +3387,7 @@ static void vop2_disable(struct drm_crtc *crtc)
 	if (vop2->version == VOP_VERSION_RK3588)
 		vop2_power_off_all_pd(vop2);
 
+	vop2->is_enabled = false;
 	pm_runtime_put_sync(vop2->dev);
 
 	clk_disable_unprepare(vop2->pclk);
