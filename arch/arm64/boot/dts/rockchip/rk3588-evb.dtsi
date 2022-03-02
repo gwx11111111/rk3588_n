@@ -11,6 +11,7 @@
 #include <dt-bindings/display/drm_mipi_dsi.h>
 #include <dt-bindings/display/rockchip_vop.h>
 #include <dt-bindings/sensor-dev.h>
+#include "rk3588-cpu-swap.dtsi"
 
 / {
 	adc_keys: adc-keys {
@@ -196,6 +197,32 @@
 
 &av1d_mmu {
 	status = "okay";
+};
+&CPU_SLEEP {
+	status = "disabled";
+};
+
+&cluster0_opp_table {
+	/delete-node/ opp-408000000;
+	/delete-node/ opp-600000000;
+	/delete-node/ opp-816000000;
+	/delete-node/ opp-1008000000;
+};
+
+&cluster1_opp_table {
+	/delete-node/ opp-408000000;
+	/delete-node/ opp-600000000;
+	/delete-node/ opp-816000000;
+	/delete-node/ opp-1008000000;
+	/delete-node/ opp-2400000000;
+};
+
+&cluster2_opp_table {
+	/delete-node/ opp-408000000;
+	/delete-node/ opp-600000000;
+	/delete-node/ opp-816000000;
+	/delete-node/ opp-1008000000;
+	/delete-node/ opp-2400000000;
 };
 
 &cpu_l0 {
@@ -877,6 +904,14 @@
 
 };
 
+&gpu_opp_table {
+	/delete-node/ opp-198000000;
+	/delete-node/ opp-297000000;
+	/delete-node/ opp-396000000;
+	/delete-node/ opp-500000000;
+	/delete-node/ opp-1000000000;
+};
+
 &gpu {
 	mali-supply = <&vdd_gpu_s0>;
 	mem-supply = <&vdd_gpu_mem_s0>;
@@ -1162,6 +1197,7 @@
 
 &vop {
 	status = "okay";
+	skip-ref-fb;
 };
 
 &vop_mmu {
