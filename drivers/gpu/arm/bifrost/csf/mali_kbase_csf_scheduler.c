@@ -4192,8 +4192,11 @@ static bool scheduler_idle_suspendable(struct kbase_device *kbdev)
 	 * informing the scheduler in case userspace rings a doorbell directly.
 	 */
 	if (suspend && (unlikely(atomic_read(&scheduler->gpu_no_longer_idle)) ||
-			unlikely(!all_on_slot_groups_remained_idle(kbdev))))
+			unlikely(!all_on_slot_groups_remained_idle(kbdev)))) {
+		dev_info(kbdev->dev,
+			 "GPU suspension skipped due to active CSGs");
 		suspend = false;
+	}
 
 	spin_unlock(&scheduler->interrupt_lock);
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
