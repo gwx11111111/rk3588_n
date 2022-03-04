@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2019-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -123,18 +123,6 @@
 #define KBASE_SERIALIZE_INTER_SLOT (1 << 1)
 /* Reset the GPU after each atom completion */
 #define KBASE_SERIALIZE_RESET (1 << 2)
-
-/**
- * enum kbase_timeout_selector - The choice of which timeout to get scaled
- *                               using the lowest GPU frequency.
- * @KBASE_TIMEOUT_SELECTOR_COUNT: Number of timeout selectors. Must be last in
- *                                the enum.
- */
-enum kbase_timeout_selector {
-
-	/* Must be the last in the enum */
-	KBASE_TIMEOUT_SELECTOR_COUNT
-};
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 /**
@@ -665,12 +653,11 @@ static inline bool kbase_jd_katom_is_protected(
 
 /**
  * kbase_atom_is_younger - query if one atom is younger by age than another
- *
  * @katom_a: the first atom
- * @katom_b: the second atom
+ * @katom_a: the second atom
  *
- * Return: true if the first atom is strictly younger than the second,
- *         false otherwise.
+ * Return: true if the first atom is strictly younger than the second, false
+ * otherwise.
  */
 static inline bool kbase_jd_atom_is_younger(const struct kbase_jd_atom *katom_a,
 					    const struct kbase_jd_atom *katom_b)
@@ -679,9 +666,7 @@ static inline bool kbase_jd_atom_is_younger(const struct kbase_jd_atom *katom_a,
 }
 
 /**
- * kbase_jd_atom_is_earlier - Check whether the first atom has been submitted
- *                            earlier than the second one
- *
+ * kbase_jd_atom_is_earlier
  * @katom_a: the first atom
  * @katom_b: the second atom
  *
@@ -745,13 +730,17 @@ static inline bool kbase_jd_atom_is_earlier(const struct kbase_jd_atom *katom_a,
  * A state machine is used to control incremental rendering.
  */
 enum kbase_jd_renderpass_state {
-	KBASE_JD_RP_COMPLETE, /* COMPLETE => START */
-	KBASE_JD_RP_START, /* START => PEND_OOM or COMPLETE */
-	KBASE_JD_RP_PEND_OOM, /* PEND_OOM => OOM or COMPLETE */
-	KBASE_JD_RP_OOM, /* OOM => RETRY */
-	KBASE_JD_RP_RETRY, /* RETRY => RETRY_PEND_OOM or COMPLETE */
-	KBASE_JD_RP_RETRY_PEND_OOM, /* RETRY_PEND_OOM => RETRY_OOM or COMPLETE */
-	KBASE_JD_RP_RETRY_OOM /* RETRY_OOM => RETRY */
+	KBASE_JD_RP_COMPLETE,       /* COMPLETE => START */
+	KBASE_JD_RP_START,          /* START => PEND_OOM or COMPLETE */
+	KBASE_JD_RP_PEND_OOM,       /* PEND_OOM => OOM or COMPLETE */
+	KBASE_JD_RP_OOM,            /* OOM => RETRY */
+	KBASE_JD_RP_RETRY,          /* RETRY => RETRY_PEND_OOM or
+				     *          COMPLETE
+				     */
+	KBASE_JD_RP_RETRY_PEND_OOM, /* RETRY_PEND_OOM => RETRY_OOM or
+				     *                   COMPLETE
+				     */
+	KBASE_JD_RP_RETRY_OOM,      /* RETRY_OOM => RETRY */
 };
 
 /**
@@ -824,7 +813,7 @@ struct kbase_jd_renderpass {
  *                            atom completes
  *                            execution on GPU or the input fence get signaled.
  * @tb_lock:                  Lock to serialize the write access made to @tb to
- *                            store the register access trace messages.
+ *                            to store the register access trace messages.
  * @tb:                       Pointer to the Userspace accessible buffer storing
  *                            the trace messages for register read/write
  *                            accesses made by the Kbase. The buffer is filled

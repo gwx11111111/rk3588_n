@@ -133,12 +133,8 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 	if (val & RESET_COMPLETED)
 		kbase_pm_reset_done(kbdev);
 
-	/* Defer clearing CLEAN_CACHES_COMPLETED to kbase_clean_caches_done.
-	 * We need to acquire hwaccess_lock to avoid a race condition with
-	 * kbase_gpu_cache_flush_and_busy_wait
-	 */
-	KBASE_KTRACE_ADD(kbdev, CORE_GPU_IRQ_CLEAR, NULL, val & ~CLEAN_CACHES_COMPLETED);
-	kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_IRQ_CLEAR), val & ~CLEAN_CACHES_COMPLETED);
+	KBASE_KTRACE_ADD(kbdev, CORE_GPU_IRQ_CLEAR, NULL, val);
+	kbase_reg_write(kbdev, GPU_CONTROL_REG(GPU_IRQ_CLEAR), val);
 
 #ifdef KBASE_PM_RUNTIME
 	if (val & DOORBELL_MIRROR) {

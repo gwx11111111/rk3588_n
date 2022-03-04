@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2019-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -68,8 +68,6 @@
  */
 #define BASEP_MEM_NO_USER_FREE ((base_mem_alloc_flags)1 << 7)
 
-/* Used as BASE_MEM_FIXED in other backends
- */
 #define BASE_MEM_RESERVED_BIT_8 ((base_mem_alloc_flags)1 << 8)
 
 /* Grow backing store on GPU Page Fault
@@ -118,15 +116,15 @@
 #define BASE_MEM_IMPORT_SHARED ((base_mem_alloc_flags)1 << 18)
 
 /**
- * BASE_MEM_RESERVED_BIT_19 - Bit 19 is reserved.
+ * Bit 19 is reserved.
  *
  * Do not remove, use the next unreserved bit for new flags
  */
 #define BASE_MEM_RESERVED_BIT_19 ((base_mem_alloc_flags)1 << 19)
 
 /**
- * BASE_MEM_TILER_ALIGN_TOP - Memory starting from the end of the initial commit is aligned
- * to 'extension' pages, where 'extension' must be a power of 2 and no more than
+ * Memory starting from the end of the initial commit is aligned to 'extension'
+ * pages, where 'extension' must be a power of 2 and no more than
  * BASE_MEM_TILER_ALIGN_TOP_EXTENSION_MAX_PAGES
  */
 #define BASE_MEM_TILER_ALIGN_TOP ((base_mem_alloc_flags)1 << 20)
@@ -211,14 +209,13 @@
 #define BASE_JIT_ALLOC_MEM_TILER_ALIGN_TOP  (1 << 0)
 
 /**
- * BASE_JIT_ALLOC_HEAP_INFO_IS_SIZE - If set, the heap info address points
- * to a __u32 holding the used size in bytes;
+ * If set, the heap info address points to a __u32 holding the used size in bytes;
  * otherwise it points to a __u64 holding the lowest address of unused memory.
  */
 #define BASE_JIT_ALLOC_HEAP_INFO_IS_SIZE  (1 << 1)
 
 /**
- * BASE_JIT_ALLOC_VALID_FLAGS - Valid set of just-in-time memory allocation flags
+ * Valid set of just-in-time memory allocation flags
  *
  * Note: BASE_JIT_ALLOC_HEAP_INFO_IS_SIZE cannot be set if heap_info_gpu_addr
  * in %base_jit_alloc_info is 0 (atom with BASE_JIT_ALLOC_HEAP_INFO_IS_SIZE set
@@ -317,12 +314,12 @@ typedef __u32 base_context_create_flags;
 /**
  * struct base_jd_udata - Per-job data
  *
- * @blob: per-job data array
- *
  * This structure is used to store per-job data, and is completely unused
  * by the Base driver. It can be used to store things such as callback
  * function pointer, data to handle job completion. It is guaranteed to be
  * untouched by the Base driver.
+ *
+ * @blob: per-job data array
  */
 struct base_jd_udata {
 	__u64 blob[2];
@@ -614,8 +611,7 @@ typedef __u32 base_jd_core_req;
 	BASE_JD_REQ_V | BASE_JD_REQ_SOFT_JOB | BASE_JD_REQ_ONLY_COMPUTE)
 
 /**
- * BASE_JD_REQ_SOFT_JOB_TYPE - Mask of all bits in base_jd_core_req that
- * controls the type of a soft job.
+ * Mask of all bits in base_jd_core_req that control the type of a soft job.
  */
 #define BASE_JD_REQ_SOFT_JOB_TYPE (BASE_JD_REQ_SOFT_JOB | 0x1f)
 
@@ -627,7 +623,7 @@ typedef __u32 base_jd_core_req;
 	((core_req) & BASE_JD_REQ_ATOM_TYPE) == BASE_JD_REQ_DEP)
 
 /**
- * enum kbase_jd_atom_state - Atom states
+ * enum kbase_jd_atom_state
  *
  * @KBASE_JD_ATOM_STATE_UNUSED: Atom is not used.
  * @KBASE_JD_ATOM_STATE_QUEUED: Atom is queued in JD.
@@ -652,7 +648,7 @@ enum kbase_jd_atom_state {
 typedef __u8 base_atom_id;
 
 /**
- * struct base_dependency - base dependency
+ * struct base_dependency -
  *
  * @atom_id:         An atom number
  * @dependency_type: Dependency type
@@ -1157,9 +1153,8 @@ enum base_jd_event_code {
 /**
  * struct base_jd_event_v2 - Event reporting structure
  *
- * @event_code:  event code of type @ref base_jd_event_code.
+ * @event_code:  event code.
  * @atom_number: the atom number that has completed.
- * @padding:     padding.
  * @udata:       user data.
  *
  * This structure is used by the kernel driver to report information
@@ -1170,9 +1165,8 @@ enum base_jd_event_code {
  * by ANDing with BASE_JD_SW_EVENT_TYPE_MASK.
  */
 struct base_jd_event_v2 {
-	__u32 event_code;
+	enum base_jd_event_code event_code;
 	base_atom_id atom_number;
-	__u8 padding[3];
 	struct base_jd_udata udata;
 };
 

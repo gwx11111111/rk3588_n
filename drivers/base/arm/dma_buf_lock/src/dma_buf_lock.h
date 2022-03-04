@@ -22,21 +22,23 @@
 #ifndef _DMA_BUF_LOCK_H
 #define _DMA_BUF_LOCK_H
 
-enum dma_buf_lock_exclusive {
+typedef enum dma_buf_lock_exclusive
+{
 	DMA_BUF_LOCK_NONEXCLUSIVE = 0,
 	DMA_BUF_LOCK_EXCLUSIVE = -1
-};
+} dma_buf_lock_exclusive;
 
-struct dma_buf_lock_k_request {
+typedef struct dma_buf_lock_k_request
+{
 	int count;
 	int *list_of_dma_buf_fds;
 	int timeout;
-	enum dma_buf_lock_exclusive exclusive;
-};
+	dma_buf_lock_exclusive exclusive;
+} dma_buf_lock_k_request;
 
 #define DMA_BUF_LOCK_IOC_MAGIC '~'
 
-#define DMA_BUF_LOCK_FUNC_LOCK_ASYNC       _IOW(DMA_BUF_LOCK_IOC_MAGIC, 11, struct dma_buf_lock_k_request)
+#define DMA_BUF_LOCK_FUNC_LOCK_ASYNC       _IOW(DMA_BUF_LOCK_IOC_MAGIC, 11, dma_buf_lock_k_request)
 
 #define DMA_BUF_LOCK_IOC_MINNR 11
 #define DMA_BUF_LOCK_IOC_MAXNR 11

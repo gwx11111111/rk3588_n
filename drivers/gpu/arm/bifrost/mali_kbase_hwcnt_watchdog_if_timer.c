@@ -23,40 +23,39 @@
 #include "mali_kbase_hwcnt_watchdog_if.h"
 #include "mali_kbase_hwcnt_watchdog_if_timer.h"
 
-#include <linux/workqueue.h>
+#include <linux/timer.h>
 #include <linux/slab.h>
 
 /**
  * struct kbase_hwcnt_watchdog_if_timer_info - Timer information for watchdog
  *                                             interface.
  *
- * @workq:          Single threaded work queue in which to execute callbacks.
- * @dwork:          Worker to execute callback function.
+ * @watchdog_timer: Watchdog timer
  * @timer_enabled:  True if watchdog timer enabled, otherwise false
  * @callback:       Watchdog callback function
  * @user_data:      Pointer to user data passed as argument to the callback
  *                  function
  */
 struct kbase_hwcnt_watchdog_if_timer_info {
-	struct workqueue_struct *workq;
-	struct delayed_work dwork;
+	struct timer_list watchdog_timer;
 	bool timer_enabled;
 	kbase_hwcnt_watchdog_callback_fn *callback;
 	void *user_data;
 };
 
 /**
- * kbasep_hwcnt_watchdog_callback() - Watchdog callback
+ * kbasep_hwcnt_watchdog_callback() - Watchdog timer callback
  *
- * @work: Work structure
+ * @timer: Timer structure
  *
- * Function to be called in a work queue after watchdog timer has expired.
+ * Function to be called when watchdog timer expires. Will call the callback
+ * function provided at enable().
  */
-static void kbasep_hwcnt_watchdog_callback(struct work_struct *const work)
+static void kbasep_hwcnt_watchdog_callback(struct timer_list *const timer)
 {
 	struct kbase_hwcnt_watchdog_if_timer_info *const info =
-		container_of(work, struct kbase_hwcnt_watchdog_if_timer_info, dwork.work);
-
+		container_of(timer, struct kbase_hwcnt_watchdog_if_timer_info,
+			     watchdog_timer);
 	if (info->callback)
 		info->callback(info->user_data);
 }
@@ -69,13 +68,14 @@ static int kbasep_hwcnt_watchdog_if_timer_enable(
 	struct kbase_hwcnt_watchdog_if_timer_info *const timer_info =
 		(void *)timer;
 
-	if (WARN_ON(!timer) || WARN_ON(!callback) || WARN_ON(timer_info->timer_enabled))
+	if (WARN_ON(!timer) || WARN_ON(!callback))
 		return -EINVAL;
 
 	timer_info->callback = callback;
 	timer_info->user_data = user_data;
 
-	queue_delayed_work(timer_info->workq, &timer_info->dwork, msecs_to_jiffies(period_ms));
+	mod_timer(&timer_info->watchdog_timer,
+		  jiffies + msecs_to_jiffies(period_ms));
 	timer_info->timer_enabled = true;
 
 	return 0;
@@ -93,7 +93,7 @@ static void kbasep_hwcnt_watchdog_if_timer_disable(
 	if (!timer_info->timer_enabled)
 		return;
 
-	cancel_delayed_work_sync(&timer_info->dwork);
+	del_timer_sync(&timer_info->watchdog_timer);
 	timer_info->timer_enabled = false;
 }
 
@@ -103,10 +103,11 @@ static void kbasep_hwcnt_watchdog_if_timer_modify(
 	struct kbase_hwcnt_watchdog_if_timer_info *const timer_info =
 		(void *)timer;
 
-	if (WARN_ON(!timer) || WARN_ON(!timer_info->timer_enabled))
+	if (WARN_ON(!timer))
 		return;
 
-	mod_delayed_work(timer_info->workq, &timer_info->dwork, msecs_to_jiffies(delay_ms));
+	mod_timer(&timer_info->watchdog_timer,
+		  jiffies + msecs_to_jiffies(delay_ms));
 }
 
 void kbase_hwcnt_watchdog_if_timer_destroy(
@@ -122,10 +123,10 @@ void kbase_hwcnt_watchdog_if_timer_destroy(
 	if (WARN_ON(!timer_info))
 		return;
 
-	destroy_workqueue(timer_info->workq);
+	del_timer_sync(&timer_info->watchdog_timer);
 	kfree(timer_info);
 
-	*watchdog_if = (struct kbase_hwcnt_watchdog_interface){ NULL };
+	memset(watchdog_if, 0, sizeof(*watchdog_if));
 }
 
 int kbase_hwcnt_watchdog_if_timer_create(
@@ -144,7 +145,8 @@ int kbase_hwcnt_watchdog_if_timer_create(
 		(struct kbase_hwcnt_watchdog_if_timer_info){ .timer_enabled =
 								     false };
 
-	INIT_DELAYED_WORK(&timer_info->dwork, kbasep_hwcnt_watchdog_callback);
+	kbase_timer_setup(&timer_info->watchdog_timer,
+			  kbasep_hwcnt_watchdog_callback);
 
 	*watchdog_if = (struct kbase_hwcnt_watchdog_interface){
 		.timer = (void *)timer_info,
@@ -153,10 +155,5 @@ int kbase_hwcnt_watchdog_if_timer_create(
 		.modify = kbasep_hwcnt_watchdog_if_timer_modify,
 	};
 
-	timer_info->workq = alloc_workqueue("mali_hwc_watchdog_wq", WQ_HIGHPRI | WQ_UNBOUND, 1);
-	if (timer_info->workq)
-		return 0;
-
-	kfree(timer_info);
-	return -ENOMEM;
+	return 0;
 }

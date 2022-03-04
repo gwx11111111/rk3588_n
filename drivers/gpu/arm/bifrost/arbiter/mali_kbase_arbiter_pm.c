@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -20,7 +20,7 @@
  */
 
 /**
- * DOC: Mali arbiter power manager state machine and APIs
+ * Mali arbiter power manager state machine and APIs
  */
 
 #include <mali_kbase.h>
@@ -394,8 +394,6 @@ void kbase_arbiter_pm_release_interrupts(struct kbase_device *kbdev)
  * @kbdev: The kbase device structure for the device (must be a valid pointer)
  *
  * Install interrupts and set the interrupt_install flag to true.
- *
- * Return: 0 if success, or a Linux error code
  */
 int kbase_arbiter_pm_install_interrupts(struct kbase_device *kbdev)
 {
@@ -621,6 +619,18 @@ static void kbase_arbiter_pm_vm_gpu_stop(struct kbase_device *kbdev)
 	case KBASE_VM_STATE_SUSPEND_PENDING:
 		/* Suspend finishes with a stop so nothing else to do */
 		break;
+	case KBASE_VM_STATE_INITIALIZING:
+	case KBASE_VM_STATE_STOPPED_GPU_REQUESTED:
+		/*
+		 * Case stop() is received when in a GPU REQUESTED state, it
+		 * means that the granted() was missed so the GPU needs to be
+		 * requested again.
+		 */
+		dev_dbg(kbdev->dev,
+			"GPU stop while already stopped with GPU requested");
+		kbase_arbif_gpu_stopped(kbdev, true);
+		start_request_timer(kbdev);
+		break;
 	default:
 		dev_warn(kbdev->dev, "GPU_STOP when not expected - state %s\n",
 			kbase_arbiter_pm_vm_state_str(arb_vm_state->vm_state));
@@ -658,8 +668,19 @@ static void kbase_gpu_lost(struct kbase_device *kbdev)
 		break;
 	case KBASE_VM_STATE_SUSPENDED:
 	case KBASE_VM_STATE_STOPPED:
-	case KBASE_VM_STATE_STOPPED_GPU_REQUESTED:
 		dev_dbg(kbdev->dev, "GPU lost while already stopped");
+		break;
+	case KBASE_VM_STATE_INITIALIZING:
+	case KBASE_VM_STATE_STOPPED_GPU_REQUESTED:
+		/*
+		 * Case lost() is received when in a GPU REQUESTED state, it
+		 * means that the granted() and stop() were missed so the GPU
+		 * needs to be requested again. Very unlikely to happen.
+		 */
+		dev_dbg(kbdev->dev,
+			"GPU lost while already stopped with GPU requested");
+		kbase_arbif_gpu_request(kbdev);
+		start_request_timer(kbdev);
 		break;
 	case KBASE_VM_STATE_SUSPEND_WAIT_FOR_GRANT:
 		dev_dbg(kbdev->dev, "GPU lost while waiting to suspend");
@@ -926,8 +947,6 @@ static void kbase_arbiter_pm_vm_wait_gpu_assignment(struct kbase_device *kbdev)
  * @kbdev: The kbase device structure for the device (must be a valid pointer)
  *
  * Checks if the virtual machine holds VM state lock.
- *
- * Return: true if GPU is assigned, else false.
  */
 static inline bool kbase_arbiter_pm_vm_gpu_assigned_lockheld(
 	struct kbase_device *kbdev)
@@ -1048,14 +1067,14 @@ void kbase_arbiter_pm_update_gpu_freq(struct kbase_arbiter_freq *arb_freq,
 }
 
 /**
- * get_arb_gpu_clk() - Enumerate a GPU clock on the given index
+ * enumerate_arb_gpu_clk() - Enumerate a GPU clock on the given index
  * @kbdev: kbase_device pointer
  * @index: GPU clock index
  *
- * Return: Pointer to structure holding GPU clock frequency data reported from
+ * Returns pointer to structure holding GPU clock frequency data reported from
  * arbiter, only index 0 is valid.
  */
-static void *get_arb_gpu_clk(struct kbase_device *kbdev,
+static void *enumerate_arb_gpu_clk(struct kbase_device *kbdev,
 		unsigned int index)
 {
 	if (index == 0)
@@ -1065,10 +1084,10 @@ static void *get_arb_gpu_clk(struct kbase_device *kbdev,
 
 /**
  * get_arb_gpu_clk_rate() - Get the current rate of GPU clock frequency value
- * @kbdev:          kbase_device pointer
- * @gpu_clk_handle: Handle unique to the enumerated GPU clock
+ * @kbdev: kbase_device pointer
+ * @index: GPU clock index
  *
- * Return: The GPU clock frequency value saved when gpu is granted from arbiter
+ * Returns the GPU clock frequency value saved when gpu is granted from arbiter
  */
 static unsigned long get_arb_gpu_clk_rate(struct kbase_device *kbdev,
 		void *gpu_clk_handle)
@@ -1090,10 +1109,10 @@ static unsigned long get_arb_gpu_clk_rate(struct kbase_device *kbdev,
  * @gpu_clk_handle:  Handle unique to the enumerated GPU clock
  * @nb:              notifier block containing the callback function pointer
  *
+ * Returns 0 on success, negative error code otherwise.
+ *
  * This function registers a callback function that is invoked whenever the
  * frequency of the clock corresponding to @gpu_clk_handle changes.
- *
- * Return: 0 on success, negative error code otherwise.
  */
 static int arb_gpu_clk_notifier_register(struct kbase_device *kbdev,
 	void *gpu_clk_handle, struct notifier_block *nb)
@@ -1135,7 +1154,7 @@ static void arb_gpu_clk_notifier_unregister(struct kbase_device *kbdev,
 
 struct kbase_clk_rate_trace_op_conf arb_clk_rate_trace_ops = {
 	.get_gpu_clk_rate = get_arb_gpu_clk_rate,
-	.enumerate_gpu_clk = get_arb_gpu_clk,
+	.enumerate_gpu_clk = enumerate_arb_gpu_clk,
 	.gpu_clk_notifier_register = arb_gpu_clk_notifier_register,
 	.gpu_clk_notifier_unregister = arb_gpu_clk_notifier_unregister
 };

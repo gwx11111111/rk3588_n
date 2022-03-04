@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2012-2016, 2018, 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2012-2016, 2018, 2020-2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -27,9 +27,8 @@
  */
 
 /**
- * kbasep_js_ctx_attr_runpool_retain_attr - Check whether a ctx has a certain attribute
- * and if so, retain that attribute on the runpool.
- *
+ * Check whether a ctx has a certain attribute, and if so, retain that
+ * attribute on the runpool.
  * @kbdev: Device pointer
  * @kctx:  KBase context
  * @attribute: Atribute to check/retain
@@ -39,11 +38,11 @@
  * - runpool_irq spinlock
  * - ctx is scheduled on the runpool
  *
- * Return: true indicates a change in ctx attributes state of the runpool.
+ * @return true indicates a change in ctx attributes state of the runpool.
  * In this state, the scheduler might be able to submit more jobs than
  * previously, and so the caller should ensure kbasep_js_try_run_next_job_nolock()
  * or similar is called sometime later.
- * false indicates no change in ctx attributes state of the runpool.
+ * @return false indicates no change in ctx attributes state of the runpool.
  */
 static bool kbasep_js_ctx_attr_runpool_retain_attr(struct kbase_device *kbdev, struct kbase_context *kctx, enum kbasep_js_ctx_attr attribute)
 {
@@ -77,9 +76,8 @@ static bool kbasep_js_ctx_attr_runpool_retain_attr(struct kbase_device *kbdev, s
 }
 
 /**
- * kbasep_js_ctx_attr_runpool_release_attr - Check whether a ctx has a certain attribute,
- * and if so, release that attribute on the runpool.
- *
+ * Check whether a ctx has a certain attribute, and if so, release that
+ * attribute on the runpool.
  * @kbdev: Device pointer
  * @kctx:  KBase context
  * @attribute: Atribute to release
@@ -89,11 +87,11 @@ static bool kbasep_js_ctx_attr_runpool_retain_attr(struct kbase_device *kbdev, s
  * - runpool_irq spinlock
  * - ctx is scheduled on the runpool
  *
- * Return: true indicates a change in ctx attributes state of the runpool.
+ * @return true indicates a change in ctx attributes state of the runpool.
  * In this state, the scheduler might be able to submit more jobs than
  * previously, and so the caller should ensure kbasep_js_try_run_next_job_nolock()
  * or similar is called sometime later.
- * false indicates no change in ctx attributes state of the runpool.
+ * @return false indicates no change in ctx attributes state of the runpool.
  */
 static bool kbasep_js_ctx_attr_runpool_release_attr(struct kbase_device *kbdev, struct kbase_context *kctx, enum kbasep_js_ctx_attr attribute)
 {
@@ -126,9 +124,8 @@ static bool kbasep_js_ctx_attr_runpool_release_attr(struct kbase_device *kbdev, 
 }
 
 /**
- * kbasep_js_ctx_attr_ctx_retain_attr - Retain a certain attribute on a ctx,
- * also retaining it on the runpool if the context is scheduled.
- *
+ * Retain a certain attribute on a ctx, also retaining it on the runpool
+ * if the context is scheduled.
  * @kbdev: Device pointer
  * @kctx:  KBase context
  * @attribute: Atribute to retain
@@ -137,9 +134,9 @@ static bool kbasep_js_ctx_attr_runpool_release_attr(struct kbase_device *kbdev, 
  * - jsctx mutex
  * - If the context is scheduled, then runpool_irq spinlock must also be held
  *
- * Return: true indicates a change in ctx attributes state of the runpool.
+ * @return true indicates a change in ctx attributes state of the runpool.
  * This may allow the scheduler to submit more jobs than previously.
- * false indicates no change in ctx attributes state of the runpool.
+ * @return false indicates no change in ctx attributes state of the runpool.
  */
 static bool kbasep_js_ctx_attr_ctx_retain_attr(struct kbase_device *kbdev, struct kbase_context *kctx, enum kbasep_js_ctx_attr attribute)
 {
@@ -167,9 +164,8 @@ static bool kbasep_js_ctx_attr_ctx_retain_attr(struct kbase_device *kbdev, struc
 }
 
 /**
- * kbasep_js_ctx_attr_ctx_release_attr - Release a certain attribute on a ctx,
- * also releasing it from the runpool if the context is scheduled.
- *
+ * Release a certain attribute on a ctx, also releasing it from the runpool
+ * if the context is scheduled.
  * @kbdev: Device pointer
  * @kctx:  KBase context
  * @attribute: Atribute to release
@@ -178,9 +174,9 @@ static bool kbasep_js_ctx_attr_ctx_retain_attr(struct kbase_device *kbdev, struc
  * - jsctx mutex
  * - If the context is scheduled, then runpool_irq spinlock must also be held
  *
- * Return: true indicates a change in ctx attributes state of the runpool.
+ * @return true indicates a change in ctx attributes state of the runpool.
  * This may allow the scheduler to submit more jobs than previously.
- * false indicates no change in ctx attributes state of the runpool.
+ * @return false indicates no change in ctx attributes state of the runpool.
  */
 static bool kbasep_js_ctx_attr_ctx_release_attr(struct kbase_device *kbdev, struct kbase_context *kctx, enum kbasep_js_ctx_attr attribute)
 {

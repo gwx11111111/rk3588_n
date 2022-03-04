@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2021-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -22,6 +22,7 @@
 #include "mali_kbase.h"
 #include "mali_kbase_kinstr_prfcnt.h"
 #include "mali_kbase_hwcnt_virtualizer.h"
+#include "mali_kbase_hwcnt_types.h"
 #include "mali_kbase_hwcnt_gpu.h"
 #include <uapi/gpu/arm/bifrost/mali_kbase_ioctl.h>
 #include "mali_malisw.h"
@@ -156,9 +157,6 @@ struct kbase_kinstr_prfcnt_async {
  * @sample_arr:           Array of dump buffers allocated by this client.
  * @read_idx:             Index of buffer read by userspace.
  * @write_idx:            Index of buffer being written by dump worker.
- * @fetch_idx:            Index of buffer being fetched by userspace, but
- *                        pending a confirmation of being read (consumed) if it
- *                        differs from the read_idx.
  * @waitq:                Client's notification queue.
  * @sample_size:          Size of the data required for one sample, in bytes.
  * @sample_count:         Number of samples the client is able to capture.
@@ -187,7 +185,6 @@ struct kbase_kinstr_prfcnt_client {
 	struct kbase_kinstr_prfcnt_sample_array sample_arr;
 	atomic_t read_idx;
 	atomic_t write_idx;
-	atomic_t fetch_idx;
 	wait_queue_head_t waitq;
 	size_t sample_size;
 	size_t sample_count;
@@ -251,7 +248,7 @@ kbasep_kinstr_prfcnt_hwcnt_reader_poll(struct file *filp,
 
 	poll_wait(filp, &cli->waitq, wait);
 
-	if (atomic_read(&cli->write_idx) != atomic_read(&cli->fetch_idx))
+	if (atomic_read(&cli->write_idx) != atomic_read(&cli->read_idx))
 		return POLLIN;
 
 	return 0;
@@ -401,30 +398,17 @@ kbase_hwcnt_metadata_block_type_to_prfcnt_block_type(u64 type)
 	return block_type;
 }
 
-static bool kbase_kinstr_is_block_type_reserved(const struct kbase_hwcnt_metadata *metadata,
-						size_t grp, size_t blk)
-{
-	enum prfcnt_block_type block_type = kbase_hwcnt_metadata_block_type_to_prfcnt_block_type(
-		kbase_hwcnt_metadata_block_type(metadata, grp, blk));
-
-	return block_type == PRFCNT_BLOCK_TYPE_RESERVED;
-}
-
 /**
  * kbasep_kinstr_prfcnt_set_block_meta_items() - Populate a sample's block meta
  *                                               item array.
- * @enable_map:      Non-NULL pointer to the map of enabled counters.
  * @dst:             Non-NULL pointer to the sample's dump buffer object.
  * @block_meta_base: Non-NULL double pointer to the start of the block meta
  *                   data items.
  * @base_addr:       Address of allocated pages for array of samples. Used
  *                   to calculate offset of block values.
  * @counter_set:     The SET which blocks represent.
- *
- * Return: 0 on success, else error code.
  */
-int kbasep_kinstr_prfcnt_set_block_meta_items(struct kbase_hwcnt_enable_map *enable_map,
-					      struct kbase_hwcnt_dump_buffer *dst,
+int kbasep_kinstr_prfcnt_set_block_meta_items(struct kbase_hwcnt_dump_buffer *dst,
 					      struct prfcnt_metadata **block_meta_base,
 					      u64 base_addr, u8 counter_set)
 {
@@ -439,10 +423,8 @@ int kbasep_kinstr_prfcnt_set_block_meta_items(struct kbase_hwcnt_enable_map *ena
 	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst) {
 		u64 *dst_blk;
 
-		/* Skip unavailable or non-enabled blocks */
-		if (kbase_kinstr_is_block_type_reserved(metadata, grp, blk) ||
-		    !kbase_hwcnt_metadata_block_instance_avail(metadata, grp, blk, blk_inst) ||
-		    !kbase_hwcnt_enable_map_block_enabled(enable_map, grp, blk, blk_inst))
+		/* Skip unused blocks */
+		if (!kbase_hwcnt_metadata_block_instance_avail(metadata, grp, blk, blk_inst))
 			continue;
 
 		dst_blk = kbase_hwcnt_dump_buffer_block_instance(dst, grp, blk, blk_inst);
@@ -500,9 +482,8 @@ static void kbasep_kinstr_prfcnt_set_sample_metadata(
 
 	/* Dealing with counter blocks */
 	ptr_md++;
-	if (WARN_ON(kbasep_kinstr_prfcnt_set_block_meta_items(&cli->enable_map, dump_buf, &ptr_md,
-							      cli->sample_arr.page_addr,
-							      cli->config.counter_set)))
+	if (WARN_ON(kbasep_kinstr_prfcnt_set_block_meta_items(
+		    dump_buf, &ptr_md, cli->sample_arr.page_addr, cli->config.counter_set)))
 		return;
 
 	/* Handle the last sentinel item */
@@ -695,9 +676,6 @@ kbasep_kinstr_prfcnt_client_start(struct kbase_kinstr_prfcnt_client *cli,
 	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map,
 						 &cli->config.phys_em);
 
-	/* Enable all the available clk_enable_map. */
-	cli->enable_map.clk_enable_map = (1ull << cli->kinstr_ctx->metadata->clk_cnt) - 1;
-
 	mutex_lock(&cli->kinstr_ctx->lock);
 	/* Enable HWC from the configuration of the client creation */
 	ret = kbase_hwcnt_virtualizer_client_set_counters(
@@ -800,7 +778,7 @@ kbasep_kinstr_prfcnt_client_stop(struct kbase_kinstr_prfcnt_client *cli,
 
 	mutex_unlock(&cli->kinstr_ctx->lock);
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -909,35 +887,28 @@ kbasep_kinstr_prfcnt_client_async_dump(struct kbase_kinstr_prfcnt_client *cli,
 static int
 kbasep_kinstr_prfcnt_client_discard(struct kbase_kinstr_prfcnt_client *cli)
 {
-	unsigned int write_idx;
-
 	WARN_ON(!cli);
 	lockdep_assert_held(&cli->cmd_sync_lock);
 
 	mutex_lock(&cli->kinstr_ctx->lock);
 
-	write_idx = atomic_read(&cli->write_idx);
-
-	/* Discard (clear) all internally buffered samples. Note, if there
-	 * is a fetched sample in flight, one should not touch the read index,
-	 * leaving it alone for the put-sample operation to update it. The
-	 * consistency between the read_idx and the fetch_idx is coordinated by
-	 * holding the cli->cmd_sync_lock.
-	 */
-	if (atomic_read(&cli->fetch_idx) != atomic_read(&cli->read_idx)) {
-		atomic_set(&cli->fetch_idx, write_idx);
-	} else {
-		atomic_set(&cli->fetch_idx, write_idx);
-		atomic_set(&cli->read_idx, write_idx);
-	}
+	/* Discard (Clear) all internally buffered samples */
+	atomic_set(&cli->read_idx, atomic_read(&cli->write_idx));
 
 	mutex_unlock(&cli->kinstr_ctx->lock);
 
 	return 0;
 }
 
-int kbasep_kinstr_prfcnt_cmd(struct kbase_kinstr_prfcnt_client *cli,
-			     struct prfcnt_control_cmd *control_cmd)
+/**
+ * kbasep_kinstr_prfcnt_cmd() - Execute command for a client session.
+ * @cli:         Non-NULL pointer to kinstr_prfcnt client.
+ * @control_cmd: Control command to execute.
+ *
+ * Return: 0 on success, else error code.
+ */
+static int kbasep_kinstr_prfcnt_cmd(struct kbase_kinstr_prfcnt_client *cli,
+				    struct prfcnt_control_cmd *control_cmd)
 {
 	int ret = 0;
 
@@ -979,36 +950,14 @@ kbasep_kinstr_prfcnt_get_sample(struct kbase_kinstr_prfcnt_client *cli,
 {
 	unsigned int write_idx;
 	unsigned int read_idx;
-	unsigned int fetch_idx;
 	u64 sample_offset_bytes;
 	struct prfcnt_metadata *sample_meta;
-	int err = 0;
 
-	mutex_lock(&cli->cmd_sync_lock);
 	write_idx = atomic_read(&cli->write_idx);
 	read_idx = atomic_read(&cli->read_idx);
 
-	if (write_idx == read_idx) {
-		err = -EINVAL;
-		goto error_out;
-	}
-
-	/* If the client interface has already had a sample been fetched,
-	 * reflected by the fetch index not equal to read_idx, i.e., typically
-	 *   read_idx + 1 == fetch_idx,
-	 * further fetch is not allowed until the previously fetched buffer
-	 * is put back (which brings the read_idx == fetch_idx). As a design,
-	 * the above add one equal condition (i.e. typical cases) may only be
-	 * untrue if there had been an interface operation on sample discard,
-	 * after the sample in question already been fetched, in which case,
-	 * the fetch_idx could have a delta larger than 1 relative to the
-	 * read_idx.
-	 */
-	fetch_idx = atomic_read(&cli->fetch_idx);
-	if (read_idx != fetch_idx) {
-		err = -EBUSY;
-		goto error_out;
-	}
+	if (write_idx == read_idx)
+		return -EINVAL;
 
 	read_idx %= cli->sample_arr.sample_count;
 	sample_offset_bytes =
@@ -1023,21 +972,19 @@ kbasep_kinstr_prfcnt_get_sample(struct kbase_kinstr_prfcnt_client *cli,
 	 * for instance if the client is trying to get an asynchronous
 	 * sample which has not been dumped yet.
 	 */
-	if (sample_meta->hdr.item_type != PRFCNT_SAMPLE_META_TYPE_SAMPLE ||
-	    sample_meta->hdr.item_version != PRFCNT_READER_API_VERSION) {
-		err = -EINVAL;
-		goto error_out;
-	}
+	if (sample_meta->hdr.item_type != PRFCNT_SAMPLE_META_TYPE_SAMPLE)
+		return -EINVAL;
+	if (sample_meta->hdr.item_version != PRFCNT_READER_API_VERSION)
+		return -EINVAL;
 
 	sample_access->sequence = sample_meta->u.sample_md.seq;
 	sample_access->sample_offset_bytes = sample_offset_bytes;
 
-	/* Marking a sample has been fetched by advancing the fetch index */
-	atomic_inc(&cli->fetch_idx);
+	/* read_idx is not incremented here, because the interface allows
+	 * only one sample to be "in flight" between kernel space and user space.
+	 */
 
-error_out:
-	mutex_unlock(&cli->cmd_sync_lock);
-	return err;
+	return 0;
 }
 
 static int
@@ -1046,39 +993,28 @@ kbasep_kinstr_prfcnt_put_sample(struct kbase_kinstr_prfcnt_client *cli,
 {
 	unsigned int write_idx;
 	unsigned int read_idx;
-	unsigned int fetch_idx;
 	u64 sample_offset_bytes;
-	int err = 0;
 
-	mutex_lock(&cli->cmd_sync_lock);
 	write_idx = atomic_read(&cli->write_idx);
 	read_idx = atomic_read(&cli->read_idx);
 
-	if (write_idx == read_idx || sample_access->sequence != read_idx) {
-		err = -EINVAL;
-		goto error_out;
-	}
+	if (write_idx == read_idx)
+		return -EINVAL;
+
+	if (sample_access->sequence != read_idx)
+		return -EINVAL;
 
 	read_idx %= cli->sample_arr.sample_count;
 	sample_offset_bytes =
 		(u64)(uintptr_t)cli->sample_arr.samples[read_idx].sample_meta -
 		(u64)(uintptr_t)cli->sample_arr.page_addr;
 
-	if (sample_access->sample_offset_bytes != sample_offset_bytes) {
-		err = -EINVAL;
-		goto error_out;
-	}
+	if (sample_access->sample_offset_bytes != sample_offset_bytes)
+		return -EINVAL;
 
-	fetch_idx = atomic_read(&cli->fetch_idx);
-	WARN_ON(read_idx == fetch_idx);
-	/* Setting the read_idx matching the fetch_idx, signals no in-flight
-	 * fetched sample.
-	 */
-	atomic_set(&cli->read_idx, fetch_idx);
+	atomic_inc(&cli->read_idx);
 
-error_out:
-	mutex_unlock(&cli->cmd_sync_lock);
-	return err;
+	return 0;
 }
 
 /**
@@ -1201,7 +1137,12 @@ static void kbasep_kinstr_prfcnt_sample_array_free(
 	memset(sample_arr, 0, sizeof(*sample_arr));
 }
 
-void kbasep_kinstr_prfcnt_client_destroy(struct kbase_kinstr_prfcnt_client *cli)
+/**
+ * kbasep_kinstr_prfcnt_client_destroy() - Destroy a kinstr_prfcnt client.
+ * @cli: kinstr_prfcnt client. Must not be attached to a kinstr_prfcnt context.
+ */
+static void
+kbasep_kinstr_prfcnt_client_destroy(struct kbase_kinstr_prfcnt_client *cli)
 {
 	if (!cli)
 		return;
@@ -1250,8 +1191,7 @@ static const struct file_operations kinstr_prfcnt_client_fops = {
 	.release = kbasep_kinstr_prfcnt_hwcnt_reader_release,
 };
 
-size_t kbasep_kinstr_prfcnt_get_sample_md_count(const struct kbase_hwcnt_metadata *metadata,
-						struct kbase_hwcnt_enable_map *enable_map)
+size_t kbasep_kinstr_prfcnt_get_sample_md_count(const struct kbase_hwcnt_metadata *metadata)
 {
 	size_t grp, blk, blk_inst;
 	size_t md_count = 0;
@@ -1260,10 +1200,8 @@ size_t kbasep_kinstr_prfcnt_get_sample_md_count(const struct kbase_hwcnt_metadat
 		return 0;
 
 	kbase_hwcnt_metadata_for_each_block(metadata, grp, blk, blk_inst) {
-		/* Skip unavailable, non-enabled or reserved blocks */
-		if (kbase_kinstr_is_block_type_reserved(metadata, grp, blk) ||
-		    !kbase_hwcnt_metadata_block_instance_avail(metadata, grp, blk, blk_inst) ||
-		    !kbase_hwcnt_enable_map_block_enabled(enable_map, grp, blk, blk_inst))
+		/* Skip unused blocks */
+		if (!kbase_hwcnt_metadata_block_instance_avail(metadata, grp, blk, blk_inst))
 			continue;
 
 		md_count++;
@@ -1278,14 +1216,14 @@ size_t kbasep_kinstr_prfcnt_get_sample_md_count(const struct kbase_hwcnt_metadat
 	return md_count;
 }
 
-static size_t kbasep_kinstr_prfcnt_get_sample_size(struct kbase_kinstr_prfcnt_client *cli,
-						   const struct kbase_hwcnt_metadata *metadata)
+static size_t kbasep_kinstr_prfcnt_get_sample_size(
+	const struct kbase_hwcnt_metadata *metadata,
+	struct kbase_hwcnt_dump_buffer *dump_buf)
 {
 	size_t dump_buf_bytes;
 	size_t clk_cnt_buf_bytes;
 	size_t sample_meta_bytes;
-	struct kbase_hwcnt_dump_buffer *dump_buf = &cli->tmp_buf;
-	size_t md_count = kbasep_kinstr_prfcnt_get_sample_md_count(metadata, &cli->enable_map);
+	size_t md_count = kbasep_kinstr_prfcnt_get_sample_md_count(metadata);
 
 	if (!metadata)
 		return 0;
@@ -1373,8 +1311,6 @@ static void kbasep_kinstr_prfcnt_async_dump_worker(struct work_struct *work)
  * kbasep_kinstr_prfcnt_dump_timer() - Dump timer that schedules the dump worker for
  *                              execution as soon as possible.
  * @timer: Timer structure.
- *
- * Return: HRTIMER_NORESTART always.
  */
 static enum hrtimer_restart
 kbasep_kinstr_prfcnt_dump_timer(struct hrtimer *timer)
@@ -1437,7 +1373,7 @@ void kbase_kinstr_prfcnt_term(struct kbase_kinstr_prfcnt_context *kinstr_ctx)
 	if (WARN_ON(kinstr_ctx->client_count > 0)) {
 		struct kbase_kinstr_prfcnt_client *pos, *n;
 
-		list_for_each_entry_safe (pos, n, &kinstr_ctx->clients, node) {
+		list_for_each_entry_safe(pos, n, &kinstr_ctx->clients, node) {
 			list_del(&pos->node);
 			kinstr_ctx->client_count--;
 			kbasep_kinstr_prfcnt_client_destroy(pos);
@@ -1495,7 +1431,7 @@ void kbase_kinstr_prfcnt_resume(struct kbase_kinstr_prfcnt_context *kinstr_ctx)
 			struct kbase_kinstr_prfcnt_client *pos;
 			bool has_periodic_clients = false;
 
-			list_for_each_entry (pos, &kinstr_ctx->clients, node) {
+			list_for_each_entry(pos, &kinstr_ctx->clients, node) {
 				if (pos->dump_interval_ns != 0) {
 					has_periodic_clients = true;
 					break;
@@ -1512,10 +1448,10 @@ void kbase_kinstr_prfcnt_resume(struct kbase_kinstr_prfcnt_context *kinstr_ctx)
 	mutex_unlock(&kinstr_ctx->lock);
 }
 
-static int kbasep_kinstr_prfcnt_sample_array_alloc(struct kbase_kinstr_prfcnt_client *cli,
-						   const struct kbase_hwcnt_metadata *metadata)
+static int kbasep_kinstr_prfcnt_sample_array_alloc(
+	const struct kbase_hwcnt_metadata *metadata, size_t n,
+	struct kbase_kinstr_prfcnt_sample_array *sample_arr)
 {
-	struct kbase_kinstr_prfcnt_sample_array *sample_arr = &cli->sample_arr;
 	struct kbase_kinstr_prfcnt_sample *samples;
 	size_t sample_idx;
 	u64 addr;
@@ -1525,25 +1461,24 @@ static int kbasep_kinstr_prfcnt_sample_array_alloc(struct kbase_kinstr_prfcnt_cl
 	size_t sample_meta_bytes;
 	size_t md_count;
 	size_t sample_size;
-	size_t buffer_count = cli->config.buffer_count;
 
 	if (!metadata || !sample_arr)
 		return -EINVAL;
 
-	md_count = kbasep_kinstr_prfcnt_get_sample_md_count(metadata, &cli->enable_map);
+	md_count = kbasep_kinstr_prfcnt_get_sample_md_count(metadata);
 	sample_meta_bytes = sizeof(struct prfcnt_metadata) * md_count;
 	dump_buf_bytes = metadata->dump_buf_bytes;
 	clk_cnt_buf_bytes =
 		sizeof(*samples->dump_buf.clk_cnt_buf) * metadata->clk_cnt;
 	sample_size = sample_meta_bytes + dump_buf_bytes + clk_cnt_buf_bytes;
 
-	samples = kmalloc_array(buffer_count, sizeof(*samples), GFP_KERNEL);
+	samples = kmalloc_array(n, sizeof(*samples), GFP_KERNEL);
 
 	if (!samples)
 		return -ENOMEM;
 
-	order = get_order(sample_size * buffer_count);
-	addr = (u64)(uintptr_t)kzalloc(sample_size * buffer_count, GFP_KERNEL);
+	order = get_order(sample_size * n);
+	addr = (u64)(uintptr_t)kzalloc(sample_size * n, GFP_KERNEL);
 
 	if (!addr) {
 		kfree((void *)samples);
@@ -1552,10 +1487,10 @@ static int kbasep_kinstr_prfcnt_sample_array_alloc(struct kbase_kinstr_prfcnt_cl
 
 	sample_arr->page_addr = addr;
 	sample_arr->page_order = order;
-	sample_arr->sample_count = buffer_count;
+	sample_arr->sample_count = n;
 	sample_arr->samples = samples;
 
-	for (sample_idx = 0; sample_idx < buffer_count; sample_idx++) {
+	for (sample_idx = 0; sample_idx < n; sample_idx++) {
 		const size_t sample_meta_offset = sample_size * sample_idx;
 		const size_t dump_buf_offset =
 			sample_meta_offset + sample_meta_bytes;
@@ -1717,7 +1652,6 @@ static int kbasep_kinstr_prfcnt_parse_request_scope(
  * @kinstr_ctx: Pointer to the kinstr_prfcnt context.
  * @setup:      Session setup information to parse.
  * @config:     Client object the session configuration should be written to.
- * @req_arr:    Pointer to array of request items for client session.
  *
  * This function parses the list of "request" items sent by the user space
  * client, and writes the configuration for the new client to be created
@@ -1725,18 +1659,41 @@ static int kbasep_kinstr_prfcnt_parse_request_scope(
  *
  * Return: 0 on success, else error code.
  */
-static int kbasep_kinstr_prfcnt_parse_setup(struct kbase_kinstr_prfcnt_context *kinstr_ctx,
-					    union kbase_ioctl_kinstr_prfcnt_setup *setup,
-					    struct kbase_kinstr_prfcnt_client_config *config,
-					    struct prfcnt_request_item *req_arr)
+static int kbasep_kinstr_prfcnt_parse_setup(
+	struct kbase_kinstr_prfcnt_context *kinstr_ctx,
+	union kbase_ioctl_kinstr_prfcnt_setup *setup,
+	struct kbase_kinstr_prfcnt_client_config *config)
 {
 	uint32_t i;
+	struct prfcnt_request_item *req_arr;
 	unsigned int item_count = setup->in.request_item_count;
+	unsigned long bytes;
 	int err = 0;
+
+	/* Limiting the request items to 2x of the expected: acommodating
+	 * moderate duplications but rejecting excessive abuses.
+	 */
+	if (!setup->in.requests_ptr || (item_count < 2) ||
+	    (setup->in.request_item_size == 0) ||
+	    item_count > 2 * kinstr_ctx->info_item_count) {
+		return -EINVAL;
+	}
+
+	bytes = item_count * sizeof(*req_arr);
+	req_arr = kmalloc(bytes, GFP_KERNEL);
+	if (!req_arr)
+		return -ENOMEM;
+
+	if (copy_from_user(req_arr, u64_to_user_ptr(setup->in.requests_ptr),
+			   bytes)) {
+		err = -EFAULT;
+		goto free_buf;
+	}
 
 	if (req_arr[item_count - 1].hdr.item_type != FLEX_LIST_TYPE_NONE ||
 	    req_arr[item_count - 1].hdr.item_version != 0) {
-		return -EINVAL;
+		err = -EINVAL;
+		goto free_buf;
 	}
 
 	/* The session configuration can only feature one value for some
@@ -1813,6 +1770,9 @@ static int kbasep_kinstr_prfcnt_parse_setup(struct kbase_kinstr_prfcnt_context *
 			break;
 	}
 
+free_buf:
+	kfree(req_arr);
+
 	if (!err) {
 		/* Verify that properties (like capture mode and block counter
 		 * set) have been defined by the user space client.
@@ -1827,17 +1787,28 @@ static int kbasep_kinstr_prfcnt_parse_setup(struct kbase_kinstr_prfcnt_context *
 	return err;
 }
 
-int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinstr_ctx,
-				       union kbase_ioctl_kinstr_prfcnt_setup *setup,
-				       struct kbase_kinstr_prfcnt_client **out_vcli,
-				       struct prfcnt_request_item *req_arr)
+/**
+ * kbasep_kinstr_prfcnt_client_create() - Create a kinstr_prfcnt client.
+ *                                        Does not attach to the kinstr_prfcnt
+ *                                        context.
+ * @kinstr_ctx: Non-NULL pointer to kinstr_prfcnt context.
+ * @setup:      Non-NULL pointer to hardware counter ioctl setup structure.
+ * @out_vcli:   Non-NULL pointer to where created client will be stored on
+ *              success.
+ *
+ * Return: 0 on success, else error code.
+ */
+static int kbasep_kinstr_prfcnt_client_create(
+	struct kbase_kinstr_prfcnt_context *kinstr_ctx,
+	union kbase_ioctl_kinstr_prfcnt_setup *setup,
+	struct kbase_kinstr_prfcnt_client **out_vcli)
 {
 	int err;
 	struct kbase_kinstr_prfcnt_client *cli;
+	struct kbase_hwcnt_physical_enable_map phys_em;
 
 	WARN_ON(!kinstr_ctx);
 	WARN_ON(!setup);
-	WARN_ON(!req_arr);
 
 	cli = kzalloc(sizeof(*cli), GFP_KERNEL);
 
@@ -1845,7 +1816,7 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 		return -ENOMEM;
 
 	cli->kinstr_ctx = kinstr_ctx;
-	err = kbasep_kinstr_prfcnt_parse_setup(kinstr_ctx, setup, &cli->config, req_arr);
+	err = kbasep_kinstr_prfcnt_parse_setup(kinstr_ctx, setup, &cli->config);
 
 	if (err < 0)
 		goto error;
@@ -1856,7 +1827,6 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 	cli->active = false;
 	atomic_set(&cli->write_idx, 0);
 	atomic_set(&cli->read_idx, 0);
-	atomic_set(&cli->fetch_idx, 0);
 
 	err = kbase_hwcnt_enable_map_alloc(kinstr_ctx->metadata,
 					   &cli->enable_map);
@@ -1864,11 +1834,17 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 	if (err < 0)
 		goto error;
 
-	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map, &cli->config.phys_em);
+	phys_em.fe_bm = 0;
+	phys_em.shader_bm = 0;
+	phys_em.tiler_bm = 0;
+	phys_em.mmu_l2_bm = 0;
+
+	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map, &phys_em);
 
 	cli->sample_count = cli->config.buffer_count;
 	atomic_set(&cli->sync_sample_count, cli->sample_count);
-	cli->sample_size = kbasep_kinstr_prfcnt_get_sample_size(cli, kinstr_ctx->metadata);
+	cli->sample_size = kbasep_kinstr_prfcnt_get_sample_size(
+		kinstr_ctx->metadata, &cli->tmp_buf);
 
 	/* Use virtualizer's metadata to alloc tmp buffer which interacts with
 	 * the HWC virtualizer.
@@ -1879,20 +1855,19 @@ int kbasep_kinstr_prfcnt_client_create(struct kbase_kinstr_prfcnt_context *kinst
 	if (err < 0)
 		goto error;
 
-	/* Disable clock map in setup, and enable clock map when start */
-	cli->enable_map.clk_enable_map = 0;
+	/* Enable all the available clk_enable_map. */
+	cli->enable_map.clk_enable_map =
+		(1ull << kinstr_ctx->metadata->clk_cnt) - 1;
 
 	/* Use metadata from virtualizer to allocate dump buffers  if
 	 * kinstr_prfcnt doesn't have the truncated metadata.
 	 */
-	err = kbasep_kinstr_prfcnt_sample_array_alloc(cli, kinstr_ctx->metadata);
+	err = kbasep_kinstr_prfcnt_sample_array_alloc(kinstr_ctx->metadata,
+						      cli->config.buffer_count,
+						      &cli->sample_arr);
 
 	if (err < 0)
 		goto error;
-
-	/* Set enable map to be 0 to prevent virtualizer to init and kick the backend to count */
-	kbase_hwcnt_gpu_enable_map_from_physical(&cli->enable_map,
-						 &(struct kbase_hwcnt_physical_enable_map){ 0 });
 
 	err = kbase_hwcnt_virtualizer_client_create(
 		kinstr_ctx->hvirt, &cli->enable_map, &cli->hvcli);
@@ -1916,46 +1891,27 @@ error:
 static size_t kbasep_kinstr_prfcnt_get_block_info_count(
 	const struct kbase_hwcnt_metadata *metadata)
 {
-	size_t grp, blk;
+	size_t grp;
 	size_t block_info_count = 0;
 
 	if (!metadata)
 		return 0;
 
 	for (grp = 0; grp < kbase_hwcnt_metadata_group_count(metadata); grp++) {
-		for (blk = 0; blk < kbase_hwcnt_metadata_block_count(metadata, grp); blk++) {
-			if (!kbase_kinstr_is_block_type_reserved(metadata, grp, blk))
-				block_info_count++;
-		}
+		block_info_count +=
+			kbase_hwcnt_metadata_block_count(metadata, grp);
 	}
 
 	return block_info_count;
 }
 
 static void kbasep_kinstr_prfcnt_get_request_info_list(
+	struct kbase_kinstr_prfcnt_context *kinstr_ctx,
 	struct prfcnt_enum_item *item_arr, size_t *arr_idx)
 {
 	memcpy(&item_arr[*arr_idx], kinstr_prfcnt_supported_requests,
 	       sizeof(kinstr_prfcnt_supported_requests));
 	*arr_idx += ARRAY_SIZE(kinstr_prfcnt_supported_requests);
-}
-
-static void kbasep_kinstr_prfcnt_get_sample_info_item(const struct kbase_hwcnt_metadata *metadata,
-						      struct prfcnt_enum_item *item_arr,
-						      size_t *arr_idx)
-{
-	struct prfcnt_enum_item sample_info = {
-		.hdr = {
-				.item_type = PRFCNT_ENUM_TYPE_SAMPLE_INFO,
-				.item_version = PRFCNT_READER_API_VERSION,
-			},
-		.u.sample_info = {
-				.num_clock_domains = metadata->clk_cnt,
-			},
-	};
-
-	item_arr[*arr_idx] = sample_info;
-	*arr_idx += 1;
 }
 
 int kbasep_kinstr_prfcnt_get_block_info_list(const struct kbase_hwcnt_metadata *metadata,
@@ -1968,17 +1924,23 @@ int kbasep_kinstr_prfcnt_get_block_info_list(const struct kbase_hwcnt_metadata *
 		return -EINVAL;
 
 	for (grp = 0; grp < kbase_hwcnt_metadata_group_count(metadata); grp++) {
-		for (blk = 0; blk < kbase_hwcnt_metadata_block_count(metadata, grp); blk++) {
+		for (blk = 0;
+		     blk < kbase_hwcnt_metadata_block_count(metadata, grp);
+		     blk++, (*arr_idx)++) {
 			size_t blk_inst;
 			size_t unused_blk_inst_count = 0;
 			size_t blk_inst_count =
 				kbase_hwcnt_metadata_block_instance_count(metadata, grp, blk);
-			enum prfcnt_block_type block_type =
-				kbase_hwcnt_metadata_block_type_to_prfcnt_block_type(
-					kbase_hwcnt_metadata_block_type(metadata, grp, blk));
 
-			if (block_type == PRFCNT_BLOCK_TYPE_RESERVED)
-				continue;
+			item_arr[*arr_idx].hdr.item_type =
+				PRFCNT_ENUM_TYPE_BLOCK;
+			item_arr[*arr_idx].hdr.item_version =
+				PRFCNT_READER_API_VERSION;
+			item_arr[*arr_idx].u.block_counter.set = block_set;
+			item_arr[*arr_idx].u.block_counter.block_type =
+				kbase_hwcnt_metadata_block_type_to_prfcnt_block_type(
+					kbase_hwcnt_metadata_block_type(
+						metadata, grp, blk));
 
 			/* Count number of unused blocks to updated number of instances */
 			for (blk_inst = 0; blk_inst < blk_inst_count; blk_inst++) {
@@ -1987,24 +1949,20 @@ int kbasep_kinstr_prfcnt_get_block_info_list(const struct kbase_hwcnt_metadata *
 					unused_blk_inst_count++;
 			}
 
-			item_arr[(*arr_idx)++] = (struct prfcnt_enum_item){
-				.hdr = {
-					.item_type = PRFCNT_ENUM_TYPE_BLOCK,
-					.item_version = PRFCNT_READER_API_VERSION,
-				},
-				.u.block_counter = {
-					.set = block_set,
-					.block_type = block_type,
-					.num_instances = blk_inst_count - unused_blk_inst_count,
-					.num_values = kbase_hwcnt_metadata_block_values_count(
-						metadata, grp, blk),
-					/* The bitmask of available counters should be dynamic.
-					 * Temporarily, it is set to U64_MAX, waiting for the
-					 * required functionality to be available in the future.
-					 */
-					.counter_mask = {U64_MAX, U64_MAX},
-				},
-			};
+			item_arr[*arr_idx].u.block_counter.num_instances =
+				blk_inst_count - unused_blk_inst_count;
+			item_arr[*arr_idx].u.block_counter.num_values =
+				kbase_hwcnt_metadata_block_values_count(
+					metadata, grp, blk);
+
+			/* The bitmask of available counters should be dynamic.
+			 * Temporarily, it is set to U64_MAX, waiting for the
+			 * required functionality to be available in the future.
+			 */
+			item_arr[*arr_idx].u.block_counter.counter_mask[0] =
+				U64_MAX;
+			item_arr[*arr_idx].u.block_counter.counter_mask[1] =
+				U64_MAX;
 		}
 	}
 
@@ -2022,11 +1980,6 @@ static int kbasep_kinstr_prfcnt_enum_info_count(
 
 	count = ARRAY_SIZE(kinstr_prfcnt_supported_requests);
 	metadata = kbase_hwcnt_virtualizer_metadata(kinstr_ctx->hvirt);
-
-	/* Add the sample_info (clock domain) descriptive item */
-	count++;
-
-	/* Other blocks based on meta data */
 	block_info_count = kbasep_kinstr_prfcnt_get_block_info_count(metadata);
 	count += block_info_count;
 
@@ -2061,12 +2014,9 @@ static int kbasep_kinstr_prfcnt_enum_info_list(
 	if (!prfcnt_item_arr)
 		return -ENOMEM;
 
-	kbasep_kinstr_prfcnt_get_request_info_list(prfcnt_item_arr, &arr_idx);
-
+	kbasep_kinstr_prfcnt_get_request_info_list(kinstr_ctx, prfcnt_item_arr,
+						   &arr_idx);
 	metadata = kbase_hwcnt_virtualizer_metadata(kinstr_ctx->hvirt);
-	/* Place the sample_info item */
-	kbasep_kinstr_prfcnt_get_sample_info_item(metadata, prfcnt_item_arr, &arr_idx);
-
 	block_info_count = kbasep_kinstr_prfcnt_get_block_info_count(metadata);
 
 	if (arr_idx + block_info_count >= enum_info->info_item_count)
@@ -2130,36 +2080,12 @@ int kbase_kinstr_prfcnt_setup(struct kbase_kinstr_prfcnt_context *kinstr_ctx,
 			      union kbase_ioctl_kinstr_prfcnt_setup *setup)
 {
 	int err;
-	unsigned int item_count;
-	unsigned long bytes;
-	struct prfcnt_request_item *req_arr;
 	struct kbase_kinstr_prfcnt_client *cli = NULL;
 
 	if (!kinstr_ctx || !setup)
 		return -EINVAL;
 
-	item_count = setup->in.request_item_count;
-
-	/* Limiting the request items to 2x of the expected: acommodating
-	 * moderate duplications but rejecting excessive abuses.
-	 */
-	if (!setup->in.requests_ptr || (item_count < 2) || (setup->in.request_item_size == 0) ||
-	    item_count > 2 * kinstr_ctx->info_item_count) {
-		return -EINVAL;
-	}
-
-	bytes = item_count * sizeof(*req_arr);
-	req_arr = kmalloc(bytes, GFP_KERNEL);
-
-	if (!req_arr)
-		return -ENOMEM;
-
-	if (copy_from_user(req_arr, u64_to_user_ptr(setup->in.requests_ptr), bytes)) {
-		err = -EFAULT;
-		goto free_buf;
-	}
-
-	err = kbasep_kinstr_prfcnt_client_create(kinstr_ctx, setup, &cli, req_arr);
+	err = kbasep_kinstr_prfcnt_client_create(kinstr_ctx, setup, &cli);
 
 	if (err < 0)
 		goto error;
@@ -2181,7 +2107,7 @@ int kbase_kinstr_prfcnt_setup(struct kbase_kinstr_prfcnt_context *kinstr_ctx,
 	if (err < 0)
 		goto client_installed_error;
 
-	goto free_buf;
+	return err;
 
 client_installed_error:
 	mutex_lock(&kinstr_ctx->lock);
@@ -2190,7 +2116,5 @@ client_installed_error:
 	mutex_unlock(&kinstr_ctx->lock);
 error:
 	kbasep_kinstr_prfcnt_client_destroy(cli);
-free_buf:
-	kfree(req_arr);
 	return err;
 }

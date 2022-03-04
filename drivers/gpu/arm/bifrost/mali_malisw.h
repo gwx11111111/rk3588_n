@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2014-2015, 2018, 2020-2022 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2015, 2018, 2020-2021 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -53,8 +53,7 @@
 #define MAX(x, y)	((x) < (y) ? (y) : (x))
 
 /**
- * CSTD_UNUSED - Function-like macro for suppressing unused variable warnings.
- *
+ * Function-like macro for suppressing unused variable warnings.
  * @x: unused variable
  *
  * Where possible such variables should be removed; this macro is present for
@@ -63,7 +62,7 @@
 #define CSTD_UNUSED(x)	((void)(x))
 
 /**
- * CSTD_NOP - Function-like macro for use where "no behavior" is desired.
+ * Function-like macro for use where "no behavior" is desired.
  * @...: no-op
  *
  * This is useful when compile time macros turn a function-like macro in to a
@@ -72,7 +71,7 @@
 #define CSTD_NOP(...)	((void)#__VA_ARGS__)
 
 /**
- * CSTD_STR1 - Function-like macro for stringizing a single level macro.
+ * Function-like macro for stringizing a single level macro.
  * @x: macro's value
  *
  * @code
@@ -84,7 +83,7 @@
 #define CSTD_STR1(x)	#x
 
 /**
- * CSTD_STR2 - Function-like macro for stringizing a macro's value.
+ * Function-like macro for stringizing a macro's value.
  * @x: macro's value
  *
  * This should not be used if the macro is defined in a way which may have no

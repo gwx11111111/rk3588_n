@@ -139,7 +139,8 @@ static ssize_t progress_timeout_show(struct device * const dev,
 
 }
 
-static DEVICE_ATTR_RW(progress_timeout);
+static DEVICE_ATTR(progress_timeout, 0644, progress_timeout_show,
+	progress_timeout_store);
 
 int kbase_csf_timeout_init(struct kbase_device *const kbdev)
 {
