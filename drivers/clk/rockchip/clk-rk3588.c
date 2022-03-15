@@ -423,22 +423,22 @@ PNAME(mux_armclkb01_p)			= { "xin24m", "gpll", "b0pll",};
 PNAME(mux_armclkb23_p)			= { "xin24m", "gpll", "b1pll",};
 PNAME(b0pll_b1pll_lpll_gpll_p)		= { "b0pll", "b1pll", "lpll", "gpll" };
 PNAME(gpll_24m_p)			= { "gpll", "xin24m" };
-PNAME(gpll_aupll_p)			= { "gpll", "dummy_aupll" };
+PNAME(gpll_aupll_p)			= { "gpll", "aupll" };
 PNAME(gpll_lpll_p)			= { "gpll", "lpll" };
 PNAME(gpll_cpll_p)			= { "gpll", "cpll" };
 PNAME(gpll_spll_p)			= { "gpll", "spll" };
 PNAME(gpll_cpll_24m_p)			= { "gpll", "cpll", "xin24m"};
-PNAME(gpll_cpll_aupll_p)		= { "gpll", "cpll", "dummy_aupll"};
+PNAME(gpll_cpll_aupll_p)		= { "gpll", "cpll", "aupll"};
 PNAME(gpll_cpll_npll_p)			= { "gpll", "cpll", "npll"};
 PNAME(gpll_cpll_npll_v0pll_p)		= { "gpll", "cpll", "npll", "v0pll"};
 PNAME(gpll_cpll_24m_spll_p)		= { "gpll", "cpll", "xin24m", "spll" };
-PNAME(gpll_cpll_aupll_spll_p)		= { "gpll", "cpll", "dummy_aupll", "spll" };
-PNAME(gpll_cpll_aupll_npll_p)		= { "gpll", "cpll", "dummy_aupll", "npll" };
+PNAME(gpll_cpll_aupll_spll_p)		= { "gpll", "cpll", "aupll", "spll" };
+PNAME(gpll_cpll_aupll_npll_p)		= { "gpll", "cpll", "aupll", "npll" };
 PNAME(gpll_cpll_v0pll_aupll_p)		= { "gpll", "cpll", "v0pll", "aupll" };
 PNAME(gpll_cpll_v0pll_spll_p)		= { "gpll", "cpll", "v0pll", "spll" };
-PNAME(gpll_cpll_aupll_npll_spll_p)	= { "gpll", "cpll", "dummy_aupll", "npll", "spll" };
+PNAME(gpll_cpll_aupll_npll_spll_p)	= { "gpll", "cpll", "aupll", "npll", "spll" };
 PNAME(gpll_cpll_dmyaupll_npll_spll_p)	= { "gpll", "cpll", "dummy_aupll", "npll", "spll" };
-PNAME(gpll_cpll_npll_aupll_spll_p)	= { "gpll", "cpll", "npll", "dummy_aupll", "spll" };
+PNAME(gpll_cpll_npll_aupll_spll_p)	= { "gpll", "cpll", "npll", "aupll", "spll" };
 PNAME(gpll_cpll_npll_1000m_p)		= { "gpll", "cpll", "npll", "clk_1000m_src" };
 PNAME(mux_24m_spll_gpll_cpll_p)		= { "xin24m", "spll", "gpll", "cpll" };
 PNAME(mux_24m_32k_p)			= { "xin24m", "xin32k" };
@@ -2062,10 +2062,10 @@ static struct rockchip_clk_branch rk3588_clk_branches[] __initdata = {
 			RK3588_CLKGATE_CON(52), 8, GFLAGS),
 	GATE(ACLK_VOP, "aclk_vop", "aclk_vop_sub_src", 0,
 			RK3588_CLKGATE_CON(52), 9, GFLAGS),
-	COMPOSITE(DCLK_VOP0_SRC, "dclk_vop0_src", gpll_cpll_v0pll_aupll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+	COMPOSITE(DCLK_VOP0_SRC, "dclk_vop0_src", gpll_cpll_v0pll_aupll_p, 0,
 			RK3588_CLKSEL_CON(111), 7, 2, MFLAGS, 0, 7, DFLAGS,
 			RK3588_CLKGATE_CON(52), 10, GFLAGS),
-	COMPOSITE(DCLK_VOP1_SRC, "dclk_vop1_src", gpll_cpll_v0pll_aupll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+	COMPOSITE(DCLK_VOP1_SRC, "dclk_vop1_src", gpll_cpll_v0pll_aupll_p, 0,
 			RK3588_CLKSEL_CON(111), 14, 2, MFLAGS, 9, 5, DFLAGS,
 			RK3588_CLKGATE_CON(52), 11, GFLAGS),
 	COMPOSITE_DCLK(DCLK_VOP2_SRC, "dclk_vop2_src", gpll_cpll_v0pll_aupll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
@@ -2080,7 +2080,7 @@ static struct rockchip_clk_branch rk3588_clk_branches[] __initdata = {
 	COMPOSITE_NODIV(DCLK_VOP2, "dclk_vop2", dclk_vop2_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
 			RK3588_CLKSEL_CON(112), 11, 2, MFLAGS,
 			RK3588_CLKGATE_CON(53), 1, GFLAGS),
-	COMPOSITE(DCLK_VOP3, "dclk_vop3", gpll_cpll_v0pll_aupll_p, CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+	COMPOSITE(DCLK_VOP3, "dclk_vop3", gpll_cpll_v0pll_aupll_p, 0,
 			RK3588_CLKSEL_CON(113), 7, 2, MFLAGS, 0, 7, DFLAGS,
 			RK3588_CLKGATE_CON(53), 2, GFLAGS),
 	GATE(PCLK_DSIHOST0, "pclk_dsihost0", "pclk_vop_root", 0,
