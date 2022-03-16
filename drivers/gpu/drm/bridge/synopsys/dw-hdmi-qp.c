@@ -2071,26 +2071,6 @@ dw_hdmi_qp_bridge_mode_valid(struct drm_bridge *bridge,
 			     const struct drm_display_info *info,
 			     const struct drm_display_mode *mode)
 {
-	int i;
-	struct dw_hdmi_qp *hdmi = bridge->driver_private;
-	const struct dw_hdmi_plat_data *pdata = hdmi->plat_data;
-	struct drm_display_mode m;
-
-	drm_mode_copy(&m, mode);
-
-	if (pdata->split_mode)
-		pdata->convert_to_origin_mode(&m);
-
-	if (m.clock > HDMI20_MAX_TMDSCLK_KHZ)
-		return MODE_OK;
-
-	for (i = 0; i < ARRAY_SIZE(supported_freq); i++)
-		if (supported_freq[i] == m.clock)
-			break;
-
-	if (i == ARRAY_SIZE(supported_freq))
-		return MODE_CLOCK_RANGE;
-
 	return MODE_OK;
 }
 
