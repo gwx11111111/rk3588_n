@@ -351,6 +351,14 @@
 	status = "okay";
 };
 
+&hdmi0_in_vp1 {
+	status = "okay";
+};
+
+&hdmi0_in_vp2 {
+	status = "okay";
+};
+
 &hdmi0_sound {
 	status = "okay";
 };
@@ -360,7 +368,14 @@
 	status = "okay";
 };
 
+&hdmi1_in_vp0 {
+	status = "okay";
+};
 &hdmi1_in_vp1 {
+	status = "okay";
+};
+
+&hdmi1_in_vp2 {
 	status = "okay";
 };
 
@@ -383,6 +398,52 @@
 
 &hdptxphy_hdmi1 {
 	status = "okay";
+};
+
+&route_hdmi0 {
+	status = "okay";
+	force-output;
+	connect = <&vp2_out_hdmi0>;
+
+	force_timing {
+		clock-frequency = <65000000>;
+		hactive = <1024>;
+		vactive = <768>;
+		hfront-porch = <24>;
+		hsync-len = <136>;
+		hback-porch = <160>;
+		vfront-porch = <3>;
+		vsync-len = <6>;
+		vback-porch = <29>;
+		hsync-active = <0>;
+		vsync-active = <0>;
+		de-active = <0>;
+		pixelclk-active = <0>;
+	};
+
+};
+
+&route_hdmi1 {
+	status = "okay";
+	force-output;
+	connect = <&vp2_out_hdmi1>;
+
+	force_timing {
+		clock-frequency = <65000000>;
+		hactive = <1024>;
+		vactive = <768>;
+		hfront-porch = <24>;
+		hsync-len = <136>;
+		hback-porch = <160>;
+		vfront-porch = <3>;
+		vsync-len = <6>;
+		vback-porch = <29>;
+		hsync-active = <0>;
+		vsync-active = <0>;
+		de-active = <0>;
+		pixelclk-active = <0>;
+	};
+
 };
 
 &i2c2 {
