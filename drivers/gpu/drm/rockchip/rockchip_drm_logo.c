@@ -453,6 +453,8 @@ of_parse_display_resource(struct drm_device *drm_dev, struct device_node *route)
 	else
 		set->hue = 50;
 
+	set->force_output = of_property_read_bool(route, "force-output");
+
 	if (!of_property_read_u32(route, "cubic_lut,offset", &val)) {
 		private->cubic_lut[crtc->index].enable = true;
 		private->cubic_lut[crtc->index].offset = val;
@@ -471,7 +473,8 @@ of_parse_display_resource(struct drm_device *drm_dev, struct device_node *route)
 }
 
 static int rockchip_drm_fill_connector_modes(struct drm_connector *connector,
-					     uint32_t maxX, uint32_t maxY)
+					     uint32_t maxX, uint32_t maxY,
+					     bool force_output)
 {
 	struct drm_device *dev = connector->dev;
 	struct drm_display_mode *mode;
@@ -489,6 +492,8 @@ static int rockchip_drm_fill_connector_modes(struct drm_connector *connector,
 	list_for_each_entry(mode, &connector->modes, head)
 		mode->status = MODE_STALE;
 
+	if (force_output)
+		connector->force = DRM_FORCE_ON;
 	if (connector->force) {
 		if (connector->force == DRM_FORCE_ON ||
 		    connector->force == DRM_FORCE_ON_DIGITAL)
@@ -543,10 +548,13 @@ static int rockchip_drm_fill_connector_modes(struct drm_connector *connector,
 		goto prune;
 	}
 
-	count = (*connector_funcs->get_modes)(connector);
+	if (!force_output)
+		count = (*connector_funcs->get_modes)(connector);
 
 	if (count == 0 && connector->status == connector_status_connected)
 		count = drm_add_modes_noedid(connector, 1024, 768);
+	if (force_output)
+		count += rockchip_drm_add_modes_noedid(connector);
 	if (count == 0)
 		goto prune;
 
@@ -642,7 +650,7 @@ static int setup_initial_state(struct drm_device *drm_dev,
 
 	if (set->sub_dev->loader_protect)
 		set->sub_dev->loader_protect(conn_state->best_encoder, true);
-	num_modes = rockchip_drm_fill_connector_modes(connector, 4096, 4096);
+	num_modes = rockchip_drm_fill_connector_modes(connector, 4096, 4096, set->force_output);
 	if (!num_modes) {
 		dev_err(drm_dev->dev, "connector[%s] can't found any modes\n",
 			connector->name);
@@ -993,6 +1001,8 @@ void rockchip_drm_show_logo(struct drm_device *drm_dev)
 	 */
 
 	list_for_each_entry_safe(set, tmp, &mode_set_list, head) {
+		if (set->force_output)
+			set->sub_dev->connector->force = DRM_FORCE_UNSPECIFIED;
 		list_del(&set->head);
 		kfree(set);
 	}
