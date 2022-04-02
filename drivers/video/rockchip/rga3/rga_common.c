@@ -173,6 +173,17 @@ bool rga_is_yuv422p_format(uint32_t format)
 	}
 }
 
+bool rga_is_only_y_format(uint32_t format)
+{
+	switch (format) {
+	case RGA_FORMAT_YCbCr_400:
+	case RGA_FORMAT_Y4:
+		return true;
+	default:
+		return false;
+	}
+}
+
 int rga_get_format_bits(uint32_t format)
 {
 	int bits = 0;
@@ -327,6 +338,10 @@ const char *rga_get_format_name(uint32_t format)
 		return "ABGR5551";
 	case RGA_FORMAT_ABGR_4444:
 		return "ABGR4444";
+
+	case RGA_FORMAT_RGBA_2BPP:
+		return "RGBA2BPP";
+
 	default:
 		return "UNF";
 	}

@@ -161,10 +161,9 @@ static void RGA3_set_reg_win0_info(u8 *base, struct rga3_req *msg)
 		param_x = 0;
 	else if (x_up == 1 && x_by == 0) {
 		param_x = FACTOR_MAX * (sw - 1) / (dw - 1);
-		if ((sw - 1) % (dw - 1) == 0) {
-			pr_err("hor_up_fac modify xxxx\n");
+		/* even multiples of 128 require a scaling factor -1 */
+		if ((FACTOR_MAX * (sw - 1)) % (dw - 1) == 0)
 			param_x = param_x - 1;
-		}
 	} else
 		param_x = FACTOR_MAX * (dw - 1) / (sw - 1) + 1;
 
@@ -172,10 +171,9 @@ static void RGA3_set_reg_win0_info(u8 *base, struct rga3_req *msg)
 		param_y = 0;
 	else if (y_up == 1 && y_by == 0) {
 		param_y = FACTOR_MAX * (sh - 1) / (dh - 1);
-		if ((sh - 1) % (dh - 1) == 0) {
-			pr_err("ver_up_fac modify yyyy\n");
+		/* even multiples of 128 require a scaling factor -1 */
+		if ((FACTOR_MAX * (sh - 1)) % (dh - 1) == 0)
 			param_y = param_y - 1;
-		}
 	} else
 		param_y = FACTOR_MAX * (dh - 1) / (sh - 1) + 1;
 
@@ -576,10 +574,9 @@ static void RGA3_set_reg_win1_info(u8 *base, struct rga3_req *msg)
 		param_x = 0;
 	else if (x_up == 1) {
 		param_x = (FACTOR_MAX * (sw - 1)) / (dw - 1);
-		if ((sw - 1) % (dw - 1) == 0) {
-			pr_err("hor_up_fac modify xxxx\n");
+		/* even multiples of 128 require a scaling factor -1 */
+		if ((FACTOR_MAX * (sw - 1)) % (dw - 1) == 0)
 			param_x = param_x - 1;
-		}
 	} else
 		param_x = (FACTOR_MAX * (dw - 1)) / (sw - 1) + 1;
 
@@ -587,10 +584,9 @@ static void RGA3_set_reg_win1_info(u8 *base, struct rga3_req *msg)
 		param_y = 0;
 	else if (y_up == 1) {
 		param_y = (FACTOR_MAX * (sh - 1)) / (dh - 1);
-		if ((sh - 1) % (dh - 1) == 0) {
-			pr_err("ver_up_fac modify yyyy\n");
+		/* even multiples of 128 require a scaling factor -1 */
+		if ((FACTOR_MAX * (sh - 1)) % (dh - 1) == 0)
 			param_y = param_y - 1;
-		}
 	} else
 		param_y = (FACTOR_MAX * (dh - 1)) / (sh - 1) + 1;
 
@@ -1340,6 +1336,18 @@ void rga_cmd_to_rga3_cmd(struct rga_req *req_rga, struct rga3_req *req)
 	if (rga_is_alpha_format(req_rga->src.format))
 		req->alpha_mode_1 = 0x0a00;
 
+	req->win0_a_global_val = req_rga->alpha_global_value;
+	req->win1_a_global_val = req_rga->alpha_global_value;
+
+	/* fixup yuv/rgb convert to rgba missing alpha channel */
+	if (!(req_rga->alpha_rop_flag & 1)) {
+		if (!rga_is_alpha_format(req_rga->src.format) &&
+		    rga_is_alpha_format(req_rga->dst.format)) {
+			req->win0_a_global_val = 0xff;
+			req->win1_a_global_val = 0xff;
+		}
+	}
+
 	/*
 	 * Layer binding:
 	 *     src => win1
@@ -1534,9 +1542,6 @@ void rga_cmd_to_rga3_cmd(struct rga_req *req_rga, struct rga3_req *req)
 			}
 		}
 	}
-
-	req->win0_a_global_val = req_rga->alpha_global_value;
-	req->win1_a_global_val = req_rga->alpha_global_value;
 
 	/* yuv to rgb */
 	/* 601 limit */
@@ -1923,18 +1928,18 @@ int rga3_set_reg(struct rga_job *job, struct rga_scheduler_t *scheduler)
 	rga_write(1, RGA3_INT_EN, scheduler);
 
 	if (DEBUGGER_EN(MSG)) {
-		pr_err("sys_ctrl = %x, int_en = %x, int_raw = %x\n",
-			 rga_read(RGA3_SYS_CTRL, scheduler),
-			 rga_read(RGA3_INT_EN, scheduler),
-			 rga_read(RGA3_INT_RAW, scheduler));
+		pr_info("sys_ctrl = %x, int_en = %x, int_raw = %x\n",
+			rga_read(RGA3_SYS_CTRL, scheduler),
+			rga_read(RGA3_INT_EN, scheduler),
+			rga_read(RGA3_INT_RAW, scheduler));
 
-		pr_err("status0 = %x, status1 = %x\n",
-			 rga_read(RGA3_STATUS0, scheduler),
-			 rga_read(RGA3_STATUS1, scheduler));
+		pr_info("status0 = %x, status1 = %x\n",
+			rga_read(RGA3_STATUS0, scheduler),
+			rga_read(RGA3_STATUS1, scheduler));
 	}
 
 	if (DEBUGGER_EN(TIME))
-		pr_err("set cmd use time = %lld\n", ktime_us_delta(now, job->timestamp));
+		pr_info("set cmd use time = %lld\n", ktime_us_delta(now, job->timestamp));
 
 	job->hw_running_time = now;
 	job->hw_recoder_time = now;
