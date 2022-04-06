@@ -496,7 +496,7 @@ void mpp_free_task(struct kref *ref)
 	session = task->session;
 
 	mpp_debug_func(DEBUG_TASK_INFO, "task %d:%d free state 0x%lx abort %d\n",
-		       session->index, task->task_index, task->state,
+		       session->index, task->task_id, task->state,
 		       atomic_read(&task->abort_request));
 
 	mpp = mpp_get_task_used_device(task, session);
@@ -573,6 +573,7 @@ static int mpp_process_task_default(struct mpp_session *session,
 	init_waitqueue_head(&task->wait);
 	atomic_set(&task->abort_request, 0);
 	task->task_index = atomic_fetch_inc(&mpp->task_index);
+	task->task_id = atomic_fetch_inc(&mpp->queue->task_id);
 	INIT_DELAYED_WORK(&task->timeout_work, mpp_task_timeout_work);
 
 	if (mpp->auto_freq_en && mpp->hw_ops->get_freq)
@@ -714,7 +715,6 @@ static int mpp_task_run(struct mpp_dev *mpp,
 	}
 
 	mpp_power_on(mpp);
-	mpp_time_record(task);
 	mpp_debug_func(DEBUG_TASK_INFO, "pid %d run %s\n",
 		       task->session->pid, dev_name(mpp->dev));
 
@@ -727,6 +727,7 @@ static int mpp_task_run(struct mpp_dev *mpp,
 	mpp_reset_down_read(mpp->reset_group);
 
 	set_bit(TASK_STATE_START, &task->state);
+	mpp_time_record(task);
 	schedule_delayed_work(&task->timeout_work,
 			      msecs_to_jiffies(MPP_WORK_TIMEOUT_DELAY));
 	if (mpp->dev_ops->run)
@@ -836,14 +837,14 @@ static int mpp_wait_result_default(struct mpp_session *session,
 	} else {
 		atomic_inc(&task->abort_request);
 		set_bit(TASK_STATE_ABORT, &task->state);
-		mpp_err("timeout, pid %d session %p:%d count %d cur_task %p index %d.\n",
+		mpp_err("timeout, pid %d session %p:%d count %d cur_task %p id %d\n",
 			session->pid, session, session->index,
 			atomic_read(&session->task_count), task,
-			task->task_index);
+			task->task_id);
 	}
 
 	mpp_debug_func(DEBUG_TASK_INFO, "task %d kref_%d\n",
-		       task->task_index, kref_read(&task->ref));
+		       task->task_id, kref_read(&task->ref));
 
 	mpp_session_pop_pending(session, task);
 
@@ -946,6 +947,7 @@ struct mpp_taskqueue *mpp_taskqueue_init(struct device *dev)
 	/* default taskqueue has max 16 task capacity */
 	queue->task_capacity = MPP_MAX_TASK_CAPACITY;
 	atomic_set(&queue->reset_request, 0);
+	atomic_set(&queue->task_id, 0);
 
 	return queue;
 }
@@ -1200,6 +1202,21 @@ static int mpp_process_request(struct mpp_session *session,
 	case MPP_CMD_POLL_HW_FINISH: {
 		msgs->flags |= req->flags;
 		msgs->poll_cnt++;
+		msgs->poll_req = NULL;
+	} break;
+	case MPP_CMD_POLL_HW_IRQ: {
+		if (msgs->poll_cnt || msgs->poll_req)
+			mpp_err("Do NOT poll hw irq when previous call not return\n");
+
+		msgs->flags |= req->flags;
+		msgs->poll_cnt++;
+
+		if (req->size && req->data) {
+			if (!msgs->poll_req)
+				msgs->poll_req = req;
+		} else {
+			msgs->poll_req = NULL;
+		}
 	} break;
 	case MPP_CMD_RESET_SESSION: {
 		int ret;
@@ -1485,7 +1502,7 @@ static void mpp_msgs_trigger(struct list_head *msgs_list)
 		}
 
 		if (test_bit(TASK_STATE_ABORT, &task->state))
-			pr_info("try to trigger abort task %d\n", task->task_index);
+			pr_info("try to trigger abort task %d\n", task->task_id);
 
 		atomic_inc(&mpp->task_count);
 
@@ -2213,22 +2230,37 @@ int mpp_set_grf(struct mpp_grf_info *grf_info)
 
 int mpp_time_record(struct mpp_task *task)
 {
-	if (mpp_debug_unlikely(DEBUG_TIMING) && task)
-		ktime_get_real_ts64(&task->start);
+	if (mpp_debug_unlikely(DEBUG_TIMING) && task) {
+		task->start = ktime_get();
+		task->part = task->start;
+	}
+
+	return 0;
+}
+
+int mpp_time_part_diff(struct mpp_task *task)
+{
+	ktime_t end;
+	struct mpp_dev *mpp = mpp_get_task_used_device(task, task->session);
+
+	end = ktime_get();
+	mpp_debug(DEBUG_PART_TIMING, "%s:%d session %d:%d part time: %lld us\n",
+		  dev_name(mpp->dev), task->core_id, task->session->pid,
+		  task->session->index, ktime_us_delta(end, task->part));
+	task->part = end;
 
 	return 0;
 }
 
 int mpp_time_diff(struct mpp_task *task)
 {
-	struct timespec64 end;
+	ktime_t end;
 	struct mpp_dev *mpp = mpp_get_task_used_device(task, task->session);
 
-	ktime_get_real_ts64(&end);
-	mpp_debug(DEBUG_TIMING, "%s: pid: %d, session: %p, time: %lld us\n",
-		  dev_name(mpp->dev), task->session->pid, task->session,
-		  (end.tv_sec  - task->start.tv_sec)  * 1000000 +
-		  (end.tv_nsec - task->start.tv_nsec)/1000);
+	end = ktime_get();
+	mpp_debug(DEBUG_TIMING, "%s:%d session %d:%d time: %lld us\n",
+		  dev_name(mpp->dev), task->core_id, task->session->pid,
+		  task->session->index, ktime_us_delta(end, task->start));
 
 	return 0;
 }

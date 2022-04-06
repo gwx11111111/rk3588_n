@@ -115,6 +115,7 @@ enum MPP_DEV_COMMAND_TYPE {
 
 	MPP_CMD_POLL_BASE		= 0x300,
 	MPP_CMD_POLL_HW_FINISH		= MPP_CMD_POLL_BASE + 0,
+	MPP_CMD_POLL_HW_IRQ		= MPP_CMD_POLL_BASE + 1,
 	MPP_CMD_POLL_BUTT,
 
 	MPP_CMD_CONTROL_BASE		= 0x400,
@@ -219,6 +220,7 @@ struct mpp_task_msgs {
 	u32 poll_cnt;
 
 	struct mpp_request reqs[MPP_MAX_MSG_NUM];
+	struct mpp_request *poll_req;
 };
 
 struct mpp_grf_info {
@@ -442,10 +444,12 @@ struct mpp_task {
 	struct kref ref;
 
 	/* record context running start time */
-	struct timespec64 start;
+	ktime_t start;
+	ktime_t part;
 	/* hardware info for current task */
 	struct mpp_hw_info *hw_info;
 	u32 task_index;
+	u32 task_id;
 	u32 *reg;
 	/* event for session wait thread */
 	wait_queue_head_t wait;
@@ -469,6 +473,7 @@ struct mpp_taskqueue {
 	struct list_head session_detach;
 	u32 detach_count;
 
+	atomic_t task_id;
 	/* lock for pending list */
 	struct mutex pending_lock;
 	struct list_head pending_list;
@@ -655,6 +660,7 @@ int mpp_set_grf(struct mpp_grf_info *grf_info);
 
 int mpp_time_record(struct mpp_task *task);
 int mpp_time_diff(struct mpp_task *task);
+int mpp_time_part_diff(struct mpp_task *task);
 
 int mpp_write_req(struct mpp_dev *mpp, u32 *regs,
 		  u32 start_idx, u32 end_idx, u32 en_idx);
