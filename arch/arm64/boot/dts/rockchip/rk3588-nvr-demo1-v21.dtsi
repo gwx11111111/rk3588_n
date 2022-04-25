@@ -33,7 +33,7 @@
 };
 
 &dsi1 {
-	status = "disabled";
+	status = "okay";
 
 	ports {
 		#address-cells = <1>;
