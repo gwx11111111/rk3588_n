@@ -1404,6 +1404,7 @@ static inline void vop2_wb_cfg_done(struct vop2_video_port *vp)
 		vop2_writel(vop2, 0, val);
 		spin_unlock_irqrestore(&vop2->irq_lock, flags);
 	} else {
+		val |= BIT(vp->id) | (BIT(vp->id) << 16);
 		vop2_writel(vop2, 0, val);
 	}
 
