@@ -370,6 +370,7 @@ struct rockchip_crtc_funcs {
 	void (*crtc_send_mcu_cmd)(struct drm_crtc *crtc, u32 type, u32 value);
 	void (*te_handler)(struct drm_crtc *crtc);
 	int (*wait_vact_end)(struct drm_crtc *crtc, unsigned int mstimeout);
+	int (*crtc_sync)(struct drm_crtc *crtc, unsigned long crtc_mask);
 	void (*crtc_standby)(struct drm_crtc *crtc, bool standby);
 };
 

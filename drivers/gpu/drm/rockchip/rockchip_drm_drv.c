@@ -1019,6 +1019,78 @@ static void rockchip_iommu_cleanup(struct drm_device *drm_dev)
 }
 
 #ifdef CONFIG_DEBUG_FS
+
+static int rockchip_drm_vp_sync_show(struct seq_file *m, void *data)
+{
+	seq_puts(m, " echo x y z > sys/kernel/debug/dri/0/video_portN/vp_sync\n");
+	seq_puts(m, " x y z is the VP id(0/1/2/3) which you want to sync\n");
+	seq_puts(m, " N is the id of the VP which you want sync with\n");
+
+	return 0;
+}
+
+static int rockchip_drm_vp_sync_open(struct inode *inode, struct file *file)
+{
+	struct drm_crtc *crtc = inode->i_private;
+
+	return single_open(file, rockchip_drm_vp_sync_show, crtc);
+}
+
+static ssize_t rockchip_drm_crtc_sync_write(struct file *file, const char __user *ubuf, size_t len, loff_t *offp)
+{
+	struct rockchip_drm_private *priv;
+	struct seq_file *m = file->private_data;
+	struct drm_crtc *crtc = m->private;
+	unsigned int pipe;
+	uint32_t crtc_mask = 0;
+	ssize_t bytes;
+	char kbuf[14] = {};
+	char *pbuf, *step_str;
+	int i, ret;
+
+	bytes = min(len, (sizeof(kbuf)-1));
+
+	if (copy_from_user(kbuf, ubuf, bytes))
+		return -EFAULT;
+
+	pbuf = &kbuf[0];
+
+	for (i = 0; i < bytes; i++) {
+		step_str = strsep(&pbuf, " ");
+		if (!step_str)
+			break;
+		crtc_mask |= BIT(simple_strtol(step_str, NULL, 0));
+	}
+
+	priv = crtc->dev->dev_private;
+	pipe = drm_crtc_index(crtc);
+
+	if (priv->crtc_funcs[pipe] && priv->crtc_funcs[pipe]->crtc_sync)
+		ret = priv->crtc_funcs[pipe]->crtc_sync(crtc, crtc_mask);
+
+	return len;
+}
+
+static const struct file_operations rockchip_drm_vp_sync_fops = {
+	.owner = THIS_MODULE,
+	.open = rockchip_drm_vp_sync_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = rockchip_drm_crtc_sync_write,
+};
+
+int rockchip_drm_add_vp_sync(struct drm_crtc *crtc, struct dentry *root)
+{
+	struct dentry *ent;
+
+	ent = debugfs_create_file("vp_sync", 0644, root, crtc, &rockchip_drm_vp_sync_fops);
+	if (!ent)
+		DRM_ERROR("create vop_plane_dump err\n");
+
+	return 0;
+}
+
 static int rockchip_drm_mm_dump(struct seq_file *s, void *data)
 {
 	struct drm_info_node *node = s->private;

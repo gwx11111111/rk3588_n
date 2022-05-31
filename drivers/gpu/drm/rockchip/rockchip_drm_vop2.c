@@ -156,6 +156,8 @@
 #define VOP2_COLOR_KEY_NONE		(0 << 31)
 #define VOP2_COLOR_KEY_MASK		(1 << 31)
 
+#define VPSYNC_DBG	0
+
 enum vop2_data_format {
 	VOP2_FMT_ARGB8888 = 0,
 	VOP2_FMT_RGB888,
@@ -5306,6 +5308,9 @@ static int vop2_crtc_debugfs_init(struct drm_minor *minor, struct drm_crtc *crtc
 		ret = -ENOMEM;
 		goto remove;
 	}
+
+	rockchip_drm_add_vp_sync(crtc, vop2->debugfs);
+
 #if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
 	rockchip_drm_add_dump_buffer(crtc, vop2->debugfs);
 #endif
@@ -5542,6 +5547,49 @@ static void vop2_crtc_te_handler(struct drm_crtc *crtc)
 	VOP_MODULE_SET(vop2, vp, edpi_wms_fs, 1);
 }
 
+static int vop2_crtc_sync(struct drm_crtc *crtc, unsigned long crtc_mask)
+{
+	struct vop2_video_port *vp = to_vop2_video_port(crtc);
+	struct vop2 *vop2 = vp->vop2;
+	int vp_id;
+	uint32_t hold;
+
+	crtc_mask |= BIT(vp->id);
+	printk("standby vp_mask: 0x%lx\n", crtc_mask);
+	for_each_set_bit(vp_id, &crtc_mask, ROCKCHIP_MAX_CRTC) {
+		vp = &vop2->vps[vp_id];
+		VOP_MODULE_SET(vop2, vp, standby, 1);
+	}
+
+	do {
+		mdelay(1);
+		hold = 1;
+		for_each_set_bit(vp_id, &crtc_mask, ROCKCHIP_MAX_CRTC) {
+			vp = &vop2->vps[vp_id];
+			hold &= vop2_read_reg(vop2, 0, &vp->regs->edpi_wms_fs);
+		}
+	} while (!hold);
+
+	for_each_set_bit(vp_id, &crtc_mask, ROCKCHIP_MAX_CRTC) {
+		vp = &vop2->vps[vp_id];
+		printk("destandby vp%d start  vcnt%d: %d vp%d_hold: 0x%08x\n", vp_id, vp_id,
+			   vop2_read_vcnt(vp), vp_id, vop2_readl(vop2, 0xc04 + vp_id*0x100));
+	}
+
+	for_each_set_bit(vp_id, &crtc_mask, ROCKCHIP_MAX_CRTC) {
+		vp = &vop2->vps[vp_id];
+		VOP_MODULE_SET(vop2, vp, standby, 0);
+	}
+
+	for_each_set_bit(vp_id, &crtc_mask, ROCKCHIP_MAX_CRTC) {
+		vp = &vop2->vps[vp_id];
+		printk("destandby vp%d done  vcnt%d: %d vp%d_hold: 0x%08x\n", vp_id, vp_id,
+			   vop2_read_vcnt(vp), vp_id, vop2_readl(vop2, 0xc04 + vp_id*0x100));
+	}
+
+	return 0;
+}
+
 static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.loader_protect = vop2_crtc_loader_protect,
 	.cancel_pending_vblank = vop2_crtc_cancel_pending_vblank,
@@ -5551,6 +5599,7 @@ static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.bandwidth = vop2_crtc_bandwidth,
 	.crtc_close = vop2_crtc_close,
 	.te_handler = vop2_crtc_te_handler,
+	.crtc_sync = vop2_crtc_sync,
 	.wait_vact_end = vop2_crtc_wait_vact_end,
 	.crtc_standby = vop2_crtc_standby,
 };
@@ -8347,6 +8396,11 @@ static irqreturn_t vop2_isr(int irq, void *data)
 
 		if (active_irqs & FS_FIELD_INTR) {
 			vop2_wb_handler(vp);
+			#if VPSYNC_DBG
+			printk("test vcnt vp%d  vp0-vcnt:%d, vp1-vcnt:%d, vp2-vcnt:%d, vp3-vcnt:%d,",
+				vp->id, vop2_read_vcnt(&vop2->vps[0]), vop2_read_vcnt(&vop2->vps[1]),
+				vop2_read_vcnt(&vop2->vps[2]), vop2_read_vcnt(&vop2->vps[3]));
+			#endif
 			if (likely(!vp->skip_vsync) || (vp->layer_sel_update == false)) {
 				drm_crtc_handle_vblank(crtc);
 				vop2_handle_vblank(vop2, crtc);

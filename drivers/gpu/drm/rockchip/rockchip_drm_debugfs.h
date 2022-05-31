@@ -69,4 +69,6 @@ rockchip_drm_dump_plane_buffer(struct vop_dump_info *dump_info, int frame_count)
 }
 #endif
 
+int rockchip_drm_add_vp_sync(struct drm_crtc *crtc, struct dentry *root);
+
 #endif
