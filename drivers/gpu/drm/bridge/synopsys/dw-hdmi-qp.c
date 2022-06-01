@@ -1556,6 +1556,10 @@ static int dw_hdmi_qp_setup(struct dw_hdmi_qp *hdmi,
 	else
 		return -EINVAL;
 
+	if ((mode->clock > 600000) && !link_cfg->frl_mode) {
+		dev_warn(hdmi->dev, "frl mode unsupproted, mode is out of range\n");
+		return 0;
+	}
 	hdmi->phy.ops->set_mode(hdmi, hdmi->phy.data, HDMI_MODE_FRL_MASK,
 				link_cfg->frl_mode);
 
