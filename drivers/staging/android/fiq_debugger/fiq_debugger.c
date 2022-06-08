@@ -1206,6 +1206,13 @@ static int fiq_tty_write(struct tty_struct *tty, const unsigned char *buf, int c
 	if (!state->console_enable)
 		return count;
 
+#ifdef CONFIG_RK_CONSOLE_THREAD
+	if (state->pdata->console_write) {
+		state->pdata->console_write(state->pdev, buf, count);
+		return  count;
+	}
+#endif
+
 	fiq_debugger_uart_enable(state);
 	spin_lock_irq(&state->console_lock);
 	for (i = 0; i < count; i++)
