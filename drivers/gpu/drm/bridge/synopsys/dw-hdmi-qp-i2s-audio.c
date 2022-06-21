@@ -59,7 +59,7 @@ static int dw_hdmi_qp_i2s_hw_params(struct device *dev, void *data,
 	bool ref2stream = false;
 
 	if (is_dw_hdmi_qp_clk_off(audio))
-		return 0;
+		return -ENODEV;
 
 	if (fmt->bit_clk_master | fmt->frame_clk_master) {
 		dev_err(dev, "unsupported clock settings\n");
@@ -131,7 +131,7 @@ static int dw_hdmi_qp_i2s_audio_startup(struct device *dev, void *data)
 	struct dw_hdmi_qp *hdmi = audio->hdmi;
 
 	if (is_dw_hdmi_qp_clk_off(audio))
-		return 0;
+		return -ENODEV;
 
 	dw_hdmi_qp_audio_enable(hdmi);
 
