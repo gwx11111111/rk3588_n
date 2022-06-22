@@ -309,4 +309,5 @@ void dw_hdmi_qp_audio_disable(struct dw_hdmi_qp *hdmi);
 int dw_hdmi_qp_set_plugged_cb(struct dw_hdmi_qp *hdmi, hdmi_codec_plugged_cb fn,
 			      struct device *codec_dev);
 
+bool dw_hdmi_is_enable(struct dw_hdmi_qp *hdmi);
 #endif /* __IMX_HDMI_H__ */

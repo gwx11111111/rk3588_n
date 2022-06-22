@@ -58,7 +58,7 @@ static int dw_hdmi_qp_i2s_hw_params(struct device *dev, void *data,
 	u32 conf0 = 0;
 	bool ref2stream = false;
 
-	if (is_dw_hdmi_qp_clk_off(audio))
+	if (!dw_hdmi_is_enable(audio->hdmi))
 		return -ENODEV;
 
 	if (fmt->bit_clk_master | fmt->frame_clk_master) {
@@ -130,7 +130,7 @@ static int dw_hdmi_qp_i2s_audio_startup(struct device *dev, void *data)
 	struct dw_hdmi_qp_i2s_audio_data *audio = data;
 	struct dw_hdmi_qp *hdmi = audio->hdmi;
 
-	if (is_dw_hdmi_qp_clk_off(audio))
+	if (!dw_hdmi_is_enable(audio->hdmi))
 		return -ENODEV;
 
 	dw_hdmi_qp_audio_enable(hdmi);
@@ -143,7 +143,7 @@ static void dw_hdmi_qp_i2s_audio_shutdown(struct device *dev, void *data)
 	struct dw_hdmi_qp_i2s_audio_data *audio = data;
 	struct dw_hdmi_qp *hdmi = audio->hdmi;
 
-	if (is_dw_hdmi_qp_clk_off(audio))
+	if (!dw_hdmi_is_enable(audio->hdmi))
 		return;
 
 	dw_hdmi_qp_audio_disable(hdmi);

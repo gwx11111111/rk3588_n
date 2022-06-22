@@ -2919,6 +2919,18 @@ void dw_hdmi_qp_unbind(struct dw_hdmi_qp *hdmi)
 }
 EXPORT_SYMBOL_GPL(dw_hdmi_qp_unbind);
 
+bool dw_hdmi_is_enable(struct dw_hdmi_qp *hdmi)
+{
+       bool ret;
+
+       mutex_lock(&hdmi->audio_mutex);
+       ret = hdmi->dclk_en;
+       mutex_unlock(&hdmi->audio_mutex);
+
+       return ret;
+}
+EXPORT_SYMBOL_GPL(dw_hdmi_is_enable);
+
 void dw_hdmi_qp_suspend(struct device *dev, struct dw_hdmi_qp *hdmi)
 {
 	if (!hdmi) {
