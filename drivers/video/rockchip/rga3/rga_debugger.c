@@ -328,14 +328,14 @@ static int rga_request_manager_show(struct seq_file *m, void *data)
 			continue;
 		}
 
-		seq_printf(m, "\t set cmd num: %d, finish job sum: %d\n",
-				task_count, finished_task_count);
+		seq_printf(m, "\t set cmd num: %d, finish job sum: %d, flags = 0x%x, ref = %d\n",
+			   task_count, finished_task_count,
+			   request->flags, kref_read(&request->refcount));
 
 		seq_puts(m, "\t cmd dump:\n\n");
 
 		for (i = 0; i < request->task_count; i++)
 			rga_request_task_debug_info(m, &(task_list[i]));
-
 	}
 
 	mutex_unlock(&request_manager->lock);
@@ -837,13 +837,22 @@ static int rga_dump_image_to_file(struct rga_internal_buffer *dump_buffer,
 		return -EFAULT;
 	}
 
-	snprintf(file_name, 100, "%s/%d_core%d_%s_plane%d_%s_w%d_h%d_%s.bin",
-		 g_dump_path,
-		 RGA_DEBUG_DUMP_IMAGE, core, channel_name, plane_id,
-		 rga_get_memory_type_str(dump_buffer->type),
-		 dump_buffer->memory_parm.width,
-		 dump_buffer->memory_parm.height,
-		 rga_get_format_name(dump_buffer->memory_parm.format));
+	if (dump_buffer->memory_parm.width == 0 &&
+	    dump_buffer->memory_parm.height == 0)
+		snprintf(file_name, 100, "%s/%d_core%d_%s_plane%d_%s_size%zu_%s.bin",
+			 g_dump_path,
+			 RGA_DEBUG_DUMP_IMAGE, core, channel_name, plane_id,
+			 rga_get_memory_type_str(dump_buffer->type),
+			 size,
+			 rga_get_format_name(dump_buffer->memory_parm.format));
+	else
+		snprintf(file_name, 100, "%s/%d_core%d_%s_plane%d_%s_w%d_h%d_%s.bin",
+			 g_dump_path,
+			 RGA_DEBUG_DUMP_IMAGE, core, channel_name, plane_id,
+			 rga_get_memory_type_str(dump_buffer->type),
+			 dump_buffer->memory_parm.width,
+			 dump_buffer->memory_parm.height,
+			 rga_get_format_name(dump_buffer->memory_parm.format));
 
 	file = filp_open(file_name, O_RDWR | O_CREAT | O_TRUNC, 0600);
 	if (!IS_ERR(file)) {
