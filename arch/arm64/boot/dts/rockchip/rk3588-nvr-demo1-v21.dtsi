@@ -193,6 +193,10 @@
 	};
 };
 
+&u2phy0_otg {
+	rockchip,typec-vbus-det;
+};
+
 &pinctrl {
 	dp {
 		dp1_hdmi_reset: dp-hdmi-reset {
