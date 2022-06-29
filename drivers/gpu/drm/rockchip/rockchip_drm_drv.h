@@ -371,6 +371,7 @@ struct rockchip_crtc_funcs {
 	void (*te_handler)(struct drm_crtc *crtc);
 	int (*wait_vact_end)(struct drm_crtc *crtc, unsigned int mstimeout);
 	int (*crtc_sync)(struct drm_crtc *crtc, unsigned long crtc_mask);
+        int (*crtc_enable)(struct drm_crtc *crtc, bool enable);
 	void (*crtc_standby)(struct drm_crtc *crtc, bool standby);
 };
 
@@ -451,6 +452,7 @@ void rockchip_drm_crtc_standby(struct drm_crtc *crtc, bool standby);
 void rockchip_drm_register_sub_dev(struct rockchip_drm_sub_dev *sub_dev);
 void rockchip_drm_unregister_sub_dev(struct rockchip_drm_sub_dev *sub_dev);
 struct rockchip_drm_sub_dev *rockchip_drm_get_sub_dev(struct device_node *node);
+int rockchip_drm_add_crtc_enable(struct drm_crtc *crtc, struct dentry *root);
 int rockchip_drm_add_modes_noedid(struct drm_connector *connector);
 void rockchip_drm_te_handle(struct drm_crtc *crtc);
 void drm_mode_convert_to_split_mode(struct drm_display_mode *mode);

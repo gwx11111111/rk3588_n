@@ -20,6 +20,7 @@
 #include <linux/console.h>
 #include <linux/iommu.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/debugfs.h>
 
 #include <drm/drm_debugfs.h>
 #include <drm/drm_drv.h>
@@ -1085,6 +1086,80 @@ int rockchip_drm_add_vp_sync(struct drm_crtc *crtc, struct dentry *root)
 	struct dentry *ent;
 
 	ent = debugfs_create_file("vp_sync", 0644, root, crtc, &rockchip_drm_vp_sync_fops);
+	if (!ent)
+		DRM_ERROR("create vop_plane_dump err\n");
+
+	return 0;
+}
+
+static int rockchip_drm_crtc_enable_show(struct seq_file *m, void *data)
+{
+	seq_puts(m, "enable crtc: echo 1 > /sys/kernel/debug/dri/0/video_portN/enable\n");
+	seq_puts(m, "disable crtc: echo 0 > /sys/kernel/debug/dri/0/video_portN/enable\n");
+	seq_puts(m, "\n");
+	seq_puts(m, "N is the id of the crtc which you want control with\n");
+	seq_puts(m, "the enable crtc call is no block, and disable crtc call is block until crtc is disabled\n");
+
+	return 0;
+}
+
+static int rockchip_drm_crtc_enable_open(struct inode *inode, struct file *file)
+{
+	struct drm_crtc *crtc = inode->i_private;
+
+	return single_open(file, rockchip_drm_crtc_enable_show, crtc);
+}
+
+static ssize_t rockchip_drm_crtc_enable_write(struct file *file, const char __user *ubuf, size_t len, loff_t *offp)
+{
+	struct rockchip_drm_private *priv;
+	struct seq_file *m = file->private_data;
+	struct drm_crtc *crtc = m->private;
+	unsigned int pipe;
+	bool enable = 0;
+	ssize_t bytes;
+	char kbuf[14] = {};
+	char *pbuf, *step_str;
+	int i;
+
+
+	bytes = min(len, (sizeof(kbuf)-1));
+
+	if (copy_from_user(kbuf, ubuf, bytes))
+		return -EFAULT;
+
+	pbuf = &kbuf[0];
+
+	for (i = 0; i < bytes; i++) {
+		step_str = strsep(&pbuf, " ");
+		if (!step_str)
+			break;
+		enable = simple_strtol(step_str, NULL, 0);
+	}
+
+	priv = crtc->dev->dev_private;
+	pipe = drm_crtc_index(crtc);
+
+	if (priv->crtc_funcs[pipe] && priv->crtc_funcs[pipe]->crtc_enable)
+		priv->crtc_funcs[pipe]->crtc_enable(crtc, enable);
+
+	return len;
+}
+
+static const struct file_operations rockchip_drm_crtc_enable_fops = {
+	.owner = THIS_MODULE,
+	.open = rockchip_drm_crtc_enable_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = rockchip_drm_crtc_enable_write,
+};
+
+int rockchip_drm_add_crtc_enable(struct drm_crtc *crtc, struct dentry *root)
+{
+	struct dentry *ent;
+
+	ent = debugfs_create_file("enable", 0644, root, crtc, &rockchip_drm_crtc_enable_fops);
 	if (!ent)
 		DRM_ERROR("create vop_plane_dump err\n");
 
