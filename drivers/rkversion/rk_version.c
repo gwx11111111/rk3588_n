@@ -14,7 +14,7 @@
 #define SDK_VERSION_NAME	"sdk_version"
 #define SDK_MISC_MINOR		142
 
-static const char sdk_version[] = "sdk release v1.2.0\n";
+static const char sdk_version[] = "sdk release v1.3.0\n";
 
 struct sdk_version_dev {
 	struct miscdevice misc;
