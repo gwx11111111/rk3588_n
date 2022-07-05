@@ -819,6 +819,8 @@ static int system_heap_create(void)
 	if (IS_ERR(sys_heap))
 		return PTR_ERR(sys_heap);
 
+	set_heap_dev_dma(dma_heap_get_dev(sys_heap));
+
 	exp_info.name = "system-dma32";
 	exp_info.ops = &system_heap_ops;
 	exp_info.priv = NULL;
@@ -826,6 +828,8 @@ static int system_heap_create(void)
 	sys_dma32_heap = dma_heap_add(&exp_info);
 	if (IS_ERR(sys_dma32_heap))
 		return PTR_ERR(sys_dma32_heap);
+
+	set_heap_dev_dma(dma_heap_get_dev(sys_dma32_heap));
 
 	exp_info.name = "system-uncached";
 	exp_info.ops = &system_uncached_heap_ops;
