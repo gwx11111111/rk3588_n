@@ -23,6 +23,7 @@
 #include <linux/regmap.h>
 #include <linux/rockchip/cpu.h>
 #include <linux/slab.h>
+#include <linux/debugfs.h>
 
 #define UPDATE(x, h, l)		(((x) << (l)) & GENMASK((h), (l)))
 
@@ -720,6 +721,7 @@ struct rockchip_hdptx_phy {
 	struct reset_control *lane_reset;
 	struct reset_control *ropll_reset;
 	struct reset_control *lcpll_reset;
+	struct dentry *debugfs_dir;
 
 	bool earc_en;
 	int count;
@@ -2176,6 +2178,120 @@ static int rockchip_hdptx_phy_clk_register(struct rockchip_hdptx_phy *hdptx)
 	return 0;
 }
 
+static int dw_hdmi_ctrl_show(struct seq_file *s, void *v)
+{
+	seq_puts(s, "unsupport read\n");
+
+	return 0;
+}
+
+static int dw_hdmi_ctrl_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, dw_hdmi_ctrl_show, inode->i_private);
+}
+
+static ssize_t
+dw_hdmi_ctrl_write(struct file *file, const char __user *buf,
+		   size_t count, loff_t *ppos)
+{
+	struct rockchip_hdptx_phy *hdptx =
+		((struct seq_file *)file->private_data)->private;
+	int bus_width = phy_get_bus_width(hdptx->phy);
+	u8 color_depth = (bus_width & COLOR_DEPTH_MASK) ? 1 : 0;
+	struct ropll_config *cfg = ropll_tmds_cfg;
+	struct ropll_config rc = {0};
+	u64 val;
+	char kbuf[25];
+
+	if (count > 24) {
+		dev_err(hdptx->dev, "out of buf range\n");
+		return count;
+	}
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EFAULT;
+	kbuf[count - 1] = '\0';
+
+	if (sscanf(kbuf, "%llu", &val) == -1)
+		return -EFAULT;
+
+	val /= 100;
+	if (color_depth)
+		val = val * 10 / 8;
+
+	for (; cfg->bit_rate != ~0; cfg++)
+		if (val == cfg->bit_rate)
+			break;
+
+	if (cfg->bit_rate == ~0) {
+		if (hdptx_phy_clk_pll_calc(val, &rc)) {
+			cfg = &rc;
+		} else {
+			dev_err(hdptx->dev, "%s can't find pll cfg\n", __func__);
+			return -EINVAL;
+		}
+	}
+
+	hdptx_write(hdptx, CMN_REG0051, cfg->pms_mdiv);
+	hdptx_write(hdptx, CMN_REG0055, cfg->pms_mdiv_afc);
+
+	hdptx_write(hdptx, CMN_REG0059, (cfg->pms_pdiv << 4) | cfg->pms_refdiv);
+
+	hdptx_write(hdptx, CMN_REG005A, (cfg->pms_sdiv << 4));
+
+	hdptx_update_bits(hdptx, CMN_REG005E, ROPLL_SDM_EN_MASK,
+			  ROPLL_SDM_EN(cfg->sdm_en));
+	if (!cfg->sdm_en)
+		hdptx_update_bits(hdptx, CMN_REG005E, 0xf, 0);
+
+
+	hdptx_update_bits(hdptx, CMN_REG0064, ROPLL_SDM_NUM_SIGN_RBR_MASK,
+		       ROPLL_SDM_NUM_SIGN_RBR(cfg->sdm_num_sign));
+	hdptx_write(hdptx, CMN_REG0065, cfg->sdm_num);
+	hdptx_write(hdptx, CMN_REG0060, cfg->sdm_deno);
+
+	hdptx_update_bits(hdptx, CMN_REG0069, ROPLL_SDC_N_RBR_MASK,
+		       ROPLL_SDC_N_RBR(cfg->sdc_n));
+
+	hdptx_write(hdptx, CMN_REG006C, cfg->sdc_num);
+	hdptx_write(hdptx, CMN_REG0070, cfg->sdc_deno);
+
+
+	hdptx_update_bits(hdptx, CMN_REG0086, PLL_PCG_POSTDIV_SEL_MASK,
+		       PLL_PCG_POSTDIV_SEL(cfg->pms_sdiv));
+
+	hdptx_update_bits(hdptx, CMN_REG0086, PLL_PCG_CLK_SEL_MASK,
+			  PLL_PCG_CLK_SEL(color_depth));
+
+	hdptx_update_bits(hdptx, CMN_REG0086, PLL_PCG_CLK_EN, PLL_PCG_CLK_EN);
+
+	return count;
+}
+
+static const struct file_operations dw_hdmi_ctrl_fops = {
+	.owner = THIS_MODULE,
+	.open = dw_hdmi_ctrl_open,
+	.read = seq_read,
+	.write = dw_hdmi_ctrl_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static void dw_hdmi_register_debugfs(struct device *dev, struct rockchip_hdptx_phy *hdptx)
+{
+	u8 buf[11];
+
+	snprintf(buf, sizeof(buf), "hdptxphy%d", hdptx->id);
+	hdptx->debugfs_dir = debugfs_create_dir(buf, NULL);
+	if (IS_ERR(hdptx->debugfs_dir)) {
+		dev_err(dev, "failed to create debugfs dir!\n");
+		return;
+	}
+
+	debugfs_create_file("rate", 0600, hdptx->debugfs_dir,
+			    hdptx, &dw_hdmi_ctrl_fops);
+}
+
 static int rockchip_hdptx_phy_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -2307,6 +2423,7 @@ static int rockchip_hdptx_phy_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_regsmap;
 
+	dw_hdmi_register_debugfs(dev, hdptx);
 	platform_set_drvdata(pdev, hdptx);
 	dev_info(dev, "hdptx phy init success\n");
 	return 0;
