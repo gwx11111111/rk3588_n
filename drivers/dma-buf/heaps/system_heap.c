@@ -654,18 +654,6 @@ static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
 		dma_unmap_sgtable(dma_heap_get_dev(heap), table, DMA_BIDIRECTIONAL, 0);
 	}
 
-	/*
-	 * this will set up dma addresses for the sglist -- it is not
-	 * technically correct as per the dma api -- a specific
-	 * device isn't really taking ownership here.  However, in
-	 * practice on our systems the only dma_address space is
-	 * physical addresses.
-	 */
-	for_each_sg(table->sgl, sg, table->nents, i) {
-		sg_dma_address(sg) = sg_phys(sg);
-		sg_dma_len(sg) = sg->length;
-	}
-
 	return dmabuf;
 
 free_pages:
