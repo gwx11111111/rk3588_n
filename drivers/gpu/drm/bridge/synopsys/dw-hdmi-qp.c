@@ -1145,7 +1145,7 @@ static void hdmi_config_AVI(struct dw_hdmi_qp *hdmi,
 		buff[1] = frame.version;
 		buff[4] &= 0x1f;
 		buff[4] |= ((frame.colorspace & 0x7) << 5);
-		buff[7] = frame.video_code;
+		buff[7] = hdmi->vic;
 		hdmi_infoframe_set_checksum(buff, 17);
 	}
 
@@ -1174,6 +1174,60 @@ static void hdmi_config_AVI(struct dw_hdmi_qp *hdmi,
 
 	hdmi_modb(hdmi, PKTSCHED_AVI_TX_EN | PKTSCHED_GCP_TX_EN,
 		  PKTSCHED_AVI_TX_EN | PKTSCHED_GCP_TX_EN,
+		  PKTSCHED_PKT_EN);
+}
+
+static void hdmi_config_vendor_specific_infoframe(struct dw_hdmi_qp *hdmi,
+						  const struct drm_connector *connector,
+						  const struct drm_display_mode *mode)
+{
+	struct hdmi_vendor_infoframe frame;
+	u8 buffer[10];
+	u32 val;
+	ssize_t err;
+	int i, reg;
+
+	err = drm_hdmi_vendor_infoframe_from_display_mode(&frame, connector,
+							  mode);
+	if (err < 0)
+		/*
+		 * Going into that statement does not means vendor infoframe
+		 * fails. It just informed us that vendor infoframe is not
+		 * needed for the selected mode. Only 4k or stereoscopic 3D
+		 * mode requires vendor infoframe. So just simply return.
+		 */
+		return;
+
+	err = hdmi_vendor_infoframe_pack(&frame, buffer, sizeof(buffer));
+	if (err < 0) {
+		dev_err(hdmi->dev, "Failed to pack vendor infoframe: %zd\n",
+			err);
+		return;
+	}
+
+	/* vsi header */
+	val = (buffer[2] << 16) | (buffer[1] << 8) | buffer[0];
+	hdmi_writel(hdmi, val, PKT_VSI_CONTENTS0);
+
+	reg = PKT_VSI_CONTENTS1;
+	for (i = 3; i < err; i++) {
+		if (i % 4 == 3)
+			val = buffer[i];
+		if (i % 4 == 0)
+			val |= buffer[i] << 8;
+		if (i % 4 == 1)
+			val |= buffer[i] << 16;
+		if (i % 4 == 2)
+			val |= buffer[i] << 24;
+
+		if ((i % 4 == 2) || (i == (err - 1))) {
+			hdmi_writel(hdmi, val, reg);
+			reg += 4;
+		}
+	}
+
+	hdmi_writel(hdmi, 0, PKT_VSI_CONTENTS7);
+	hdmi_modb(hdmi, PKTSCHED_VSI_TX_EN, PKTSCHED_VSI_TX_EN,
 		  PKTSCHED_PKT_EN);
 }
 
@@ -1672,6 +1726,7 @@ static int dw_hdmi_qp_setup(struct dw_hdmi_qp *hdmi,
 		}
 		/* HDMI Initialization Step F - Configure AVI InfoFrame */
 		hdmi_config_AVI(hdmi, connector, mode);
+		hdmi_config_vendor_specific_infoframe(hdmi, connector, mode);
 		hdmi_config_CVTEM(hdmi);
 		hdmi_config_drm_infoframe(hdmi, connector);
 		hdmi_set_op_mode(hdmi, link_cfg, connector);
