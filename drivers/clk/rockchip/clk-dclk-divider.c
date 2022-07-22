@@ -29,9 +29,41 @@ static long clk_dclk_round_rate(struct clk_hw *hw, unsigned long rate,
 {
 	struct clk_divider *divider = to_clk_divider(hw);
 	int div, maxdiv =  div_mask(divider->width) + 1;
+	ulong max_prate = divider->max_prate;
+	bool allow_odd = 0;
 
-	div = DIV_ROUND_UP_ULL(divider->max_prate, rate);
-	if (div % 2)
+	switch (rate) {
+	case 25175000:	/* div=10 */
+		max_prate = 251750000;
+		break;
+	case 27000000:	/* div=21 */
+		allow_odd = 1;
+		max_prate = 567000000;
+		break;
+	case 40000000:
+		break;
+	case 65000000:	/* div=18 */
+		max_prate = 1170000000;
+		break;
+	case 74250000:	/* div=12 */
+		max_prate = 891000000;
+		break;
+	case 106500000:	/* div=6 */
+		max_prate = 639000000;
+		break;
+	case 148500000:	/* div=6 */
+		max_prate = 891000000;
+		break;
+	case 297000000:	/* div=6 */
+		max_prate = 1782000000;
+		break;
+	case 594000000:	/* div=6 */
+		max_prate = 3564000000;
+		break;
+	}
+
+	div = DIV_ROUND_UP_ULL(max_prate, rate);
+	if (!allow_odd && div % 2)
 		div = __rounddown_pow_of_two(div);
 	div = div > maxdiv ? maxdiv : div;
 	*prate = div  * rate;

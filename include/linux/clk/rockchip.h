@@ -8,8 +8,14 @@
 
 #ifdef CONFIG_ROCKCHIP_CLK_COMPENSATION
 int rockchip_pll_clk_compensation(struct clk *clk, int ppm);
+int rockchip_pll_clk_compensation_reset(struct clk *clk);
 #else
 static inline int rockchip_pll_clk_compensation(struct clk *clk, int ppm)
+{
+	return -ENOSYS;
+}
+
+static inline int rockchip_pll_clk_compensation_reset(struct clk *clk)
 {
 	return -ENOSYS;
 }
