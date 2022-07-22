@@ -159,16 +159,32 @@ static inline int rknpu_job_wait(struct rknpu_job *job)
 	struct rknpu_subcore_data *subcore_data = NULL;
 	void __iomem *rknpu_core_base = NULL;
 	int core_index = rknpu_core_index(job->args->core_mask);
+	unsigned long flags;
+	int wait_count = 0;
 	int ret = -EINVAL;
 
 	subcore_data = &rknpu_dev->subcore_datas[core_index];
-	ret = wait_event_interruptible_timeout(subcore_data->job_done_wq,
-					       job->flags & RKNPU_JOB_DONE,
-					       msecs_to_jiffies(args->timeout));
+
+	do {
+		ret = wait_event_interruptible_timeout(
+			subcore_data->job_done_wq, job->flags & RKNPU_JOB_DONE,
+			msecs_to_jiffies(args->timeout));
+		wait_count++;
+		if (wait_count >= 3)
+			break;
+	} while (ret == 0 && job->in_queue[core_index]);
+
+	if (job->in_queue[core_index]) {
+		spin_lock_irqsave(&rknpu_dev->lock, flags);
+		list_del_init(&job->head[core_index]);
+		job->in_queue[core_index] = false;
+		spin_unlock_irqrestore(&rknpu_dev->lock, flags);
+		return ret < 0 ? ret : -EINVAL;
+	}
 
 	last_task = job->last_task;
 	if (!last_task)
-		return -EINVAL;
+		return ret < 0 ? ret : -EINVAL;
 
 	last_task->int_status = job->int_status[core_index];
 
@@ -182,6 +198,11 @@ static inline int rknpu_job_wait(struct rknpu_job *job)
 				(task_status &
 				 rknpu_dev->config->pc_task_number_mask);
 		}
+
+		LOG_ERROR(
+			"failed to wait job, task counter: %d, flags: %#x, ret = %d\n",
+			args->task_counter, args->flags, ret);
+
 		return ret < 0 ? ret : -ETIMEDOUT;
 	}
 
@@ -317,6 +338,7 @@ static void rknpu_job_next(struct rknpu_device *rknpu_dev, int core_index)
 			       head[core_index]);
 
 	list_del_init(&job->head[core_index]);
+	job->in_queue[core_index] = false;
 
 	subcore_data->job = job;
 	job->run_count--;
@@ -352,22 +374,24 @@ static void rknpu_job_done(struct rknpu_job *job, int ret, int core_index)
 	spin_unlock_irqrestore(&rknpu_dev->irq_lock, flags);
 
 	if (job->interrupt_count == 0) {
+		int use_core_num = job->use_core_num;
+
 		job->flags |= RKNPU_JOB_DONE;
 		job->ret = ret;
 
 		if (job->fence)
 			dma_fence_signal(job->fence);
 
-		if (job->use_core_num > 1)
+		if (job->flags & RKNPU_JOB_ASYNC)
+			schedule_work(&job->cleanup_work);
+
+		if (use_core_num > 1)
 			wake_up(&(&rknpu_dev->subcore_datas[0])->job_done_wq);
 		else
 			wake_up(&subcore_data->job_done_wq);
 	}
 
 	rknpu_job_next(rknpu_dev, core_index);
-
-	if (job->flags & RKNPU_JOB_ASYNC)
-		schedule_work(&job->cleanup_work);
 }
 
 static void rknpu_job_schedule(struct rknpu_job *job)
@@ -422,6 +446,7 @@ static void rknpu_job_schedule(struct rknpu_job *job)
 			subcore_data->task_num =
 				subcore_data->task_num + task_num;
 			list_add_tail(&job->head[i], &subcore_data->todo_list);
+			job->in_queue[i] = true;
 		}
 	}
 	spin_unlock_irqrestore(&rknpu_dev->irq_lock, flags);
@@ -439,20 +464,29 @@ static void rknpu_job_abort(struct rknpu_job *job)
 	int core_index = rknpu_core_index(job->args->core_mask);
 	void __iomem *rknpu_core_base = rknpu_dev->base[core_index];
 	unsigned long flags;
-	int i = 0;
 	int task_num = 0;
+	ktime_t now;
+	int i = 0;
 
 	msleep(100);
+	now = ktime_get();
 	if (job->ret == -ETIMEDOUT) {
 		LOG_ERROR(
-			"job timeout, irq status: %#x, raw status: %#x, require mask: %#x, task counter: %#x\n",
-			REG_READ(RKNPU_OFFSET_INT_STATUS),
+			"job timeout, flags: %#x, irq status: %#x, raw status: %#x, require mask: %#x, task counter: %#x, elapsed time: %lldus\n",
+			job->flags, REG_READ(RKNPU_OFFSET_INT_STATUS),
 			REG_READ(RKNPU_OFFSET_INT_RAW_STATUS),
 			job->int_mask[core_index],
 			(REG_READ(RKNPU_OFFSET_PC_TASK_STATUS) &
-			 rknpu_dev->config->pc_task_number_mask));
+			 rknpu_dev->config->pc_task_number_mask),
+			ktime_to_us(ktime_sub(now, job->timestamp)));
 		rknpu_soft_reset(rknpu_dev);
+	} else {
+		LOG_ERROR(
+			"job abort, flags: %#x, ret: %d, elapsed time: %lldus\n",
+			job->flags, job->ret,
+			ktime_to_us(ktime_sub(now, job->timestamp)));
 	}
+
 	for (i = 0; i < rknpu_dev->config->num_irqs; i++) {
 		if (job->args->core_mask & rknpu_core_mask(i)) {
 			subcore_data = &rknpu_dev->subcore_datas[i];
@@ -579,6 +613,7 @@ static void rknpu_job_timeout_clean(struct rknpu_device *rknpu_dev,
 							struct rknpu_job,
 							head[i]);
 						list_del_init(&job->head[i]);
+						job->in_queue[i] = false;
 					} else {
 						job = NULL;
 					}

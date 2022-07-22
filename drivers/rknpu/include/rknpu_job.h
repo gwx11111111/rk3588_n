@@ -29,6 +29,7 @@ struct rknpu_job {
 	struct rknpu_device *rknpu_dev;
 	struct list_head head[RKNPU_MAX_CORES];
 	struct work_struct cleanup_work;
+	bool in_queue[RKNPU_MAX_CORES];
 	unsigned int flags;
 	int ret;
 	struct rknpu_submit *args;
