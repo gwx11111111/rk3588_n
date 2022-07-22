@@ -5332,7 +5332,6 @@ static int vop2_crtc_debugfs_init(struct drm_minor *minor, struct drm_crtc *crtc
 	}
 
 	rockchip_drm_add_vp_sync(crtc, vop2->debugfs);
-	rockchip_drm_add_crtc_enable(crtc, vop2->debugfs);
 
 #if defined(CONFIG_ROCKCHIP_DRM_DEBUG)
 	rockchip_drm_add_dump_buffer(crtc, vop2->debugfs);
@@ -5612,35 +5611,6 @@ static int vop2_crtc_sync(struct drm_crtc *crtc, unsigned long crtc_mask)
 
 	return 0;
 }
-static int vop2_crtc_enable(struct drm_crtc *crtc, bool enable)
-{
-	struct vop2_video_port *vp = to_vop2_video_port(crtc);
-	struct vop2 *vop2 = vp->vop2;
-	bool hold = 0;
-	u32 offset = 0x10 * vp->id;
-
-	if (crtc->enabled == 0) {
-		DRM_INFO("vp%d is disabled\n", vp->id);
-
-		return 0;
-	}
-	if (enable) {
-		VOP_MODULE_SET(vop2, vp, standby, 0);
-	} else {
-		vop2_writel(vop2, 0xa4 + offset, 0x400040);
-		VOP_MODULE_SET(vop2, vp, standby, 1);
-
-		do {
-			mdelay(1);
-			hold = !!(vop2_readl(vop2, 0xac + offset) & 0x40);
-		} while (!hold);
-	}
-	printk(KERN_DEBUG "vp%d  vcnt%d, standby:%d\n",
-	       vp->id, vop2_read_vcnt(vp), VOP_MODULE_GET(vop2, vp, standby));
-
-	return 0;
-}
-
 
 static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.loader_protect = vop2_crtc_loader_protect,
@@ -5652,7 +5622,6 @@ static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.crtc_close = vop2_crtc_close,
 	.te_handler = vop2_crtc_te_handler,
 	.crtc_sync = vop2_crtc_sync,
-	.crtc_enable = vop2_crtc_enable,
 	.wait_vact_end = vop2_crtc_wait_vact_end,
 	.crtc_standby = vop2_crtc_standby,
 };
