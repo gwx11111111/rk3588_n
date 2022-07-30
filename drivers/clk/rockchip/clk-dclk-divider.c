@@ -33,26 +33,19 @@ static long clk_dclk_round_rate(struct clk_hw *hw, unsigned long rate,
 	bool allow_odd = 0;
 
 	switch (rate) {
-	case 25175000:	/* div=10 */
-		max_prate = 251750000;
-		break;
-	case 27000000:	/* div=21 */
-		allow_odd = 1;
-		max_prate = 567000000;
-		break;
 	case 40000000:
 		break;
-	case 65000000:	/* div=18 */
-		max_prate = 1170000000;
+	case 65000000:	/* div=13 */
+		max_prate = 845000000;
 		break;
-	case 74250000:	/* div=12 */
-		max_prate = 891000000;
+	case 74250000:	/* div=20 */
+		max_prate = 1485000000;
 		break;
 	case 106500000:	/* div=6 */
 		max_prate = 639000000;
 		break;
-	case 148500000:	/* div=6 */
-		max_prate = 891000000;
+	case 148500000:	/* div=10 */
+		max_prate = 1485000000;
 		break;
 	case 297000000:	/* div=6 */
 		max_prate = 1782000000;
