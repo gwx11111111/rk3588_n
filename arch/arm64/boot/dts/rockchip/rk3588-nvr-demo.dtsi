@@ -10,7 +10,7 @@
 
 / {
 	i2s0_sound: i2s0-sound {
-		status = "okay";
+		status = "disabled";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <256>;
@@ -292,7 +292,7 @@
 &i2c3 {
 	status = "okay";
 	es8311: es8311@18 {
-		status = "okay";
+		status = "disabled";
 		compatible = "everest,es8311";
 		reg = <0x18>;
 		#sound-dai-cells = <0>;
