@@ -802,12 +802,12 @@ static const struct rockchip_combphy_grfcfg rk3588_combphy_grfcfgs = {
 	.con2_for_pcie		= { 0x0008, 15, 0, 0x00, 0x0101 },
 	.con3_for_pcie		= { 0x000c, 15, 0, 0x00, 0x0200 },
 	.con0_for_sata		= { 0x0000, 15, 0, 0x00, 0x0129 },
-	.con1_for_sata		= { 0x0004, 15, 0, 0x00, 0x0000 },
+	.con1_for_sata		= { 0x0004, 15, 0, 0x00, 0x0100 },
 	.con2_for_sata		= { 0x0008, 15, 0, 0x00, 0x80c1 },
 	.con3_for_sata		= { 0x000c, 15, 0, 0x00, 0x0407 },
 	/* pipe-grf */
 	.pipe_con0_for_sata	= { 0x0000, 11, 5, 0x00, 0x22 },
-	.pipe_con1_for_sata	= { 0x0000, 2, 0, 0x00, 0x2 },
+	.pipe_con1_for_sata	= { 0x0004, 2, 0, 0x00, 0x2 },
 };
 
 static const struct clk_bulk_data rk3588_clks[] = {

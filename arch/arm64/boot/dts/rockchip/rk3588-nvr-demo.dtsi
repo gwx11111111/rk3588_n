@@ -624,6 +624,9 @@
 &sata1 {
 	status = "okay";
 };
+&sata2 {
+	status = "okay";
+};
 
 &sdhci {
 	bus-width = <8>;
@@ -773,7 +776,7 @@
 
 &usbhost_dwc3_0 {
 	dr_mode = "host";
-	status = "okay";
+	status = "disabled";
 };
 
 &vdd_vdenc_s0 {
