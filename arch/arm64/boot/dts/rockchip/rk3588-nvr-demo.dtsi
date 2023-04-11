@@ -112,7 +112,7 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 		enable-active-high;
-		gpio = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+		gpio = <&gpio4 RK_PA3 GPIO_ACTIVE_HIGH>;
 		vin-supply = <&vcc5v0_sys>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&vcc5v0_otg_en>;
@@ -148,37 +148,37 @@
 &dp0 {
 	pinctrl-0 = <&dp0m2_pins>;
 	pinctrl-names = "default";
-	status = "okay";
+	status = "disabled";
 };
 
 &dp0_in_vp0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp0_in_vp1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp0_in_vp2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp1 {
 	pinctrl-0 = <&dp1m2_pins &dp1_hdmi_ctl>;
 	pinctrl-names = "default";
-	status = "okay";
+	status = "disabled";
 };
 
 &dp1_in_vp0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp1_in_vp1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp1_in_vp2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &gmac0 {
@@ -231,52 +231,52 @@
 
 &hdmi0 {
 	enable-gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_HIGH>;
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi0_in_vp0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi0_in_vp1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi0_in_vp2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi0_sound {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1 {
 	enable-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1_in_vp0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1_in_vp1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1_in_vp2 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdmi1_sound {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdptxphy_hdmi0 {
-	status = "okay";
+	status = "disabled";
 };
 
 &hdptxphy_hdmi1 {
-	status = "okay";
+	status = "disabled";
 };
 
 &i2c0 {
@@ -290,7 +290,7 @@
 };
 
 &i2c3 {
-	status = "okay";
+	status = "disabled";
 	es8311: es8311@18 {
 		status = "disabled";
 		compatible = "everest,es8311";
@@ -320,9 +320,10 @@
 };
 
 &i2c6 {
-	status = "okay";
+	status = "disabled";
 	hym8563: hym8563@51 {
 		compatible = "haoyu,hym8563";
+		status = "disabled";
 		reg = <0x51>;
 
 		pinctrl-names = "default";
@@ -382,7 +383,7 @@
 &pcie3x4 {
 	reset-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie30>;
-	status = "okay";
+	status = "disabled";
 };
 
 &pwm3 {
@@ -660,7 +661,7 @@
 		};
 
 		vcc5v0_otg_en: vcc5v0-otg-en {
-			rockchip,pins = <4 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <4 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -696,7 +697,8 @@
 };
 
 &u2phy1_otg {
-	phy-supply = <&vcc5v0_host>;
+	vbus-supply = <&vcc5v0_otg>;
+	rockchip,typec-vbus-det;
 	status = "okay";
 };
 
@@ -767,7 +769,8 @@
 };
 
 &usbdrd_dwc3_1 {
-	dr_mode = "host";
+	dr_mode = "otg";
+	extcon = <&u2phy1>;
 	maximum-speed = "high-speed";
 	status = "okay";
 };
